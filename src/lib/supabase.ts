@@ -5,7 +5,16 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 let cachedAdminClient: SupabaseClient | null | undefined;
 
 function getSupabaseUrl(): string | null {
-  return process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? null;
+  return (
+    process.env.SUPABASE_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    process.env.VITE_SUPABASE_URL ??
+    null
+  );
+}
+
+function getSupabaseAdminKey(): string | null {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ?? null;
 }
 
 export function hasSupabaseConfig(): boolean {
@@ -13,7 +22,7 @@ export function hasSupabaseConfig(): boolean {
 }
 
 export function hasSupabaseAdminConfig(): boolean {
-  return Boolean(getSupabaseUrl() && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(getSupabaseUrl() && getSupabaseAdminKey());
 }
 
 export function getSupabaseAdminClient(): SupabaseClient | null {
@@ -22,7 +31,7 @@ export function getSupabaseAdminClient(): SupabaseClient | null {
   }
 
   const url = getSupabaseUrl();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = getSupabaseAdminKey();
 
   if (!url || !serviceRoleKey) {
     cachedAdminClient = null;

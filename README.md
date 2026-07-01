@@ -105,12 +105,16 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```bash
 SUPABASE_URL=your-supabase-url
 SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
 
 주의:
 
 - `SUPABASE_SERVICE_ROLE_KEY`는 서버 전용입니다.
 - 절대로 클라이언트 코드나 브라우저에 노출하지 마세요.
+- 이미 `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY`를 쓰고 있다면 그대로 넣어도 됩니다.
+- 이 앱은 Next.js 서버에서 `NEXT_PUBLIC_*`, `SUPABASE_*`, `VITE_*`를 모두 읽도록 맞춰 두었습니다.
 
 ### 3. 개발 서버 실행
 

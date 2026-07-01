@@ -15,17 +15,30 @@ export interface AuthContext extends AuthUser {
   role: AppRole;
 }
 
+function readEnv(...names: string[]): string | null {
+  for (const name of names) {
+    const value = process.env[name];
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 export function getSupabaseAuthUrl(): string | null {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? null;
+  return readEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "VITE_SUPABASE_URL");
 }
 
 export function getSupabaseAuthKey(): string | null {
-  return (
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-    process.env.SUPABASE_ANON_KEY ??
-    process.env.SUPABASE_PUBLISHABLE_KEY ??
-    null
+  return readEnv(
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_PUBLISHABLE_KEY",
+    "VITE_SUPABASE_ANON_KEY",
+    "VITE_SUPABASE_PUBLISHABLE_KEY"
   );
 }
 

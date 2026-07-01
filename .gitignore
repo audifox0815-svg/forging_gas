@@ -24,14 +24,14 @@
 .DS_Store
 *.pem
 .forging-store.json
-dev.out.log
-dev.err.log
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+dev.out*.log
+dev.err*.log
 
 # env files (can opt-in for committing if needed)
 .env*

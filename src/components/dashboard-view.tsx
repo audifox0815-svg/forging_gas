@@ -131,7 +131,7 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
         <MetricCard
           label="목표 달성률"
           value={formatPercent(snapshot.kpis.targetAchievementRate)}
-          helper={`${formatTon(snapshot.kpis.totalProductionTon)} ÷ ${formatTon(snapshot.kpis.totalPlanTon)} × 100`}
+          helper={`${formatTon(snapshot.kpis.totalProductionTon)} ÷ ${formatTon(snapshot.kpis.totalTargetTon)} × 100`}
         />
         <MetricCard
           label="가스원단위"
@@ -158,7 +158,7 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
                 labelFormatter={(value) => `라인 ${value}`}
               />
               <Bar dataKey="actualTon" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="planTon" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="targetTon" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartShell>
@@ -202,7 +202,7 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
             <YAxis tickLine={false} axisLine={false} />
             <Tooltip
               formatter={(value, name) => {
-                if (name === "actualTon" || name === "planTon") {
+                if (name === "actualTon" || name === "targetTon") {
                   return [formatTon(Number(value ?? 0)), name === "actualTon" ? "실적" : "목표"];
                 }
                 if (name === "tonPerHour") {
@@ -220,7 +220,7 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
             />
             <Area
               type="monotone"
-              dataKey="planTon"
+              dataKey="targetTon"
               stroke="var(--color-chart-2)"
               fill="var(--color-chart-2)"
               fillOpacity={0.12}
@@ -262,10 +262,10 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
                     <TableCell>
                       <div className="space-y-1">
                         <div className="font-medium">
-                          {formatTon(item.actualTon)} / {formatTon(item.planTon)}
+                          {formatTon(item.actualTon)} / {formatTon(item.targetTon)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {formatFormula(item.actualTon, item.planTon, item.achievementRate, "%")}
+                          {formatFormula(item.actualTon, item.targetTon, item.achievementRate, "%")}
                         </div>
                       </div>
                     </TableCell>

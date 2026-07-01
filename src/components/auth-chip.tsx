@@ -17,10 +17,12 @@ function roleLabel(role: AppRole | null): string {
   switch (role) {
     case "admin":
       return "관리자";
+    case "manager":
+      return "관리자+조장";
     case "operator":
-      return "운영자";
+      return "작업자";
     case "viewer":
-      return "조회 전용";
+      return "조회";
     default:
       return "게스트";
   }

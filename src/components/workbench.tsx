@@ -36,9 +36,7 @@ function SummaryPill({
 }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/40 px-4 py-3">
-      <div className="rounded-xl border border-border/70 bg-background p-2 text-primary">
-        {icon}
-      </div>
+      <div className="rounded-xl border border-border/70 bg-background p-2 text-primary">{icon}</div>
       <div>
         <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">{label}</div>
         <div className="text-sm font-medium">{value}</div>
@@ -51,10 +49,12 @@ function roleLabel(role: AppRole | null): string {
   switch (role) {
     case "admin":
       return "관리자";
+    case "manager":
+      return "관리자+조장";
     case "operator":
-      return "운영자";
+      return "작업자";
     case "viewer":
-      return "조회 전용";
+      return "조회";
     default:
       return "게스트";
   }
@@ -83,7 +83,7 @@ export function Workbench({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">단조 생산성 · 가스원단위</Badge>
+                <Badge variant="secondary">단조 생산성·가스원단위</Badge>
                 <Badge variant="outline">{snapshot.source}</Badge>
                 <Badge variant="outline">{snapshot.activeYear}년</Badge>
                 {authEnabled ? <Badge variant="outline">{roleLabel(role)}</Badge> : null}
@@ -91,8 +91,8 @@ export function Workbench({
               <div className="space-y-3">
                 <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">{APP_NAME}</h1>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-                  업로드된 엑셀을 바로 집계해 생산성과 가스원단위를 보여줍니다. 로그인 없이도 사용할 수 있고,
-                  로그인한 관리자만 역할을 관리할 수 있습니다.
+                  업로드된 데이터를 바탕으로 라인별 실적, 목표, 생산성, 가스원단위를 한눈에 보여줍니다.
+                  로그인 없이도 볼 수 있고, 로그인한 사용자는 권한에 따라 운영할 수 있습니다.
                 </p>
               </div>
             </div>
@@ -127,8 +127,18 @@ export function Workbench({
               <TriangleAlert className="size-4" />
               <AlertTitle>게스트 모드</AlertTitle>
               <AlertDescription>
-                로그인 없이도 바로 사용할 수 있습니다. 업로드와 조회는 공용으로 열어두고, 역할 관리는
-                로그인한 관리자만 사용할 수 있습니다.
+                로그인 없이 바로 사용할 수 있습니다. 업로드와 조회는 공용으로 열려 있고, 역할 관리만 로그인한 관리자에게
+                열려 있습니다.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {role === "manager" ? (
+            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-emerald-100">
+              <TriangleAlert className="size-4" />
+              <AlertTitle>조장 모드</AlertTitle>
+              <AlertDescription>
+                현재 계정은 조장 권한입니다. 자기 라인 데이터를 확인하고, 이후 단계에서 승인/확인 기능을 사용할 수 있습니다.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -136,31 +146,16 @@ export function Workbench({
           {authEnabled && adminBootstrapStatus === false ? (
             <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
               <TriangleAlert className="size-4" />
-              <AlertTitle>첫 admin 계정이 아직 없습니다</AlertTitle>
+              <AlertTitle>첫 관리자 계정이 없습니다</AlertTitle>
               <AlertDescription>
-                Supabase SQL Editor에서 첫 관리자 계정을 한 번 지정한 뒤, 역할 관리 탭에서 운영하세요.
+                Supabase SQL Editor에서 첫 관리자 계정을 한 번만 지정해 주세요.
               </AlertDescription>
             </Alert>
           ) : null}
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              모든 계산식에는 분자와 분모를 함께 보여줍니다.
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              업로드 실패 시 어느 셀에서 문제가 났는지 바로 확인할 수 있습니다.
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              단위가 맞지 않으면 경고 배지를 띄워서 실수를 줄입니다.
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              Supabase가 없어도 로컬로 동작하고, 있으면 서버 저장으로 이어집니다.
-            </div>
-          </div>
-
           {!canImport ? (
             <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-              현재 계정은 조회 전용입니다. 업로드가 필요하면 운영자 또는 관리자에게 권한을 요청하세요.
+              현재 계정은 조회 전용입니다. 업로드가 필요하면 작업자나 관리자에게 권한을 요청하세요.
             </div>
           ) : null}
         </header>
@@ -171,7 +166,7 @@ export function Workbench({
             <TabsTrigger value="dashboard">생산성 대시보드</TabsTrigger>
             <TabsTrigger value="productivity">시간당 생산량</TabsTrigger>
             <TabsTrigger value="gas">가스원단위</TabsTrigger>
-            {canManage ? <TabsTrigger value="admin">역할 관리</TabsTrigger> : null}
+            {canManage ? <TabsTrigger value="admin">권한 관리</TabsTrigger> : null}
           </TabsList>
 
           {canImport ? (

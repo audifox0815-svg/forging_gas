@@ -1,25 +1,28 @@
 import "server-only";
 
 import {
+  LINE_CODES,
   PRODUCT_BENCHMARKS,
   type DashboardSnapshot,
+  type GasBasis,
   type GasReadingRecord,
   type LineCode,
   type ProductionRecord,
 } from "@/lib/domain";
 import { formatMonthLabel, safeDivide } from "@/lib/format";
 import { loadStore } from "@/lib/store";
+import type { PlantPlanDayRecord, PlantTargetRecord } from "@/lib/plant-model";
 
 interface ProductionLineAggregate {
   actualTon: number;
-  planTon: number;
+  targetTon: number;
   workHours: number;
   lastMonth: string;
 }
 
 interface GasLineAggregate {
   usageM3: number;
-  basisCounts: Record<string, number>;
+  basisCounts: Record<GasBasis, number>;
 }
 
 interface GasBasisLineAggregate {
@@ -38,7 +41,16 @@ interface YearLineTotals {
   RM: number;
 }
 
+const DEFAULT_PLAN_DAYS_BY_MONTH = [20, 19, 21, 20, 20, 20, 21, 20, 20, 20, 19, 18] as const;
+
 const PRODUCT_NAMES = Object.keys(PRODUCT_BENCHMARKS);
+
+function createBasisCounts(): Record<GasBasis, number> {
+  return {
+    고지: 0,
+    자체: 0,
+  };
+}
 
 function round(value: number, digits = 1): number {
   const factor = 10 ** digits;
@@ -53,14 +65,104 @@ function sortUniqueMonths(months: Iterable<string>): string[] {
   return [...new Set(months)].sort((left, right) => left.localeCompare(right));
 }
 
+function makeTargetKey(year: number, line: LineCode): string {
+  return `${year}:${line}`;
+}
+
+function makePlanDayKey(year: number, line: LineCode, month: number): string {
+  return `${year}:${line}:${month}`;
+}
+
+function buildTargetMaps(
+  targets: PlantTargetRecord[],
+  planDays: PlantPlanDayRecord[]
+): {
+  targetMap: Map<string, number>;
+  planDayMap: Map<string, number>;
+} {
+  const targetMap = new Map<string, number>();
+  const planDayMap = new Map<string, number>();
+
+  for (const target of targets) {
+    targetMap.set(makeTargetKey(target.year, target.lineCode), target.dailyTargetTon);
+  }
+
+  for (const planDay of planDays) {
+    planDayMap.set(makePlanDayKey(planDay.year, planDay.lineCode, planDay.month), planDay.days);
+  }
+
+  return { targetMap, planDayMap };
+}
+
+function resolveDailyTarget(
+  targetMap: Map<string, number>,
+  year: number,
+  line: LineCode
+): number {
+  return (
+    targetMap.get(makeTargetKey(year, line)) ??
+    targetMap.get(makeTargetKey(year - 1, line)) ??
+    0
+  );
+}
+
+function resolvePlanDays(
+  planDayMap: Map<string, number>,
+  year: number,
+  line: LineCode,
+  month: number
+): number {
+  return (
+    planDayMap.get(makePlanDayKey(year, line, month)) ??
+    DEFAULT_PLAN_DAYS_BY_MONTH[month - 1] ??
+    0
+  );
+}
+
+function resolveAnnualTargetTon(
+  targetMap: Map<string, number>,
+  planDayMap: Map<string, number>,
+  year: number,
+  line: LineCode
+): { dailyTargetTon: number; planDays: number; targetTon: number } {
+  const dailyTargetTon = resolveDailyTarget(targetMap, year, line);
+
+  const planDays = DEFAULT_PLAN_DAYS_BY_MONTH.reduce(
+    (sum, _, index) => sum + resolvePlanDays(planDayMap, year, line, index + 1),
+    0
+  );
+
+  return {
+    dailyTargetTon,
+    planDays,
+    targetTon: dailyTargetTon * planDays,
+  };
+}
+
+function resolveMonthlyTargetTon(
+  targetMap: Map<string, number>,
+  planDayMap: Map<string, number>,
+  year: number,
+  month: number
+): number {
+  return LINE_CODES.reduce((sum, line) => {
+    const dailyTargetTon = resolveDailyTarget(targetMap, year, line);
+    const planDays = resolvePlanDays(planDayMap, year, line, month);
+    return sum + dailyTargetTon * planDays;
+  }, 0);
+}
+
 function createProductionAggregates(
   productionRows: ProductionRecord[],
-  activeYear: number
+  activeYear: number,
+  targets: PlantTargetRecord[],
+  planDays: PlantPlanDayRecord[]
 ) {
+  const { targetMap, planDayMap } = buildTargetMaps(targets, planDays);
   const lineMap = new Map<LineCode, ProductionLineAggregate>();
   const productMap = new Map<string, { actualTon: number; workHours: number; material: string }>();
   const materialMap = new Map<string, { actualTon: number; workHours: number }>();
-  const monthlyMap = new Map<string, { actualTon: number; planTon: number; workHours: number }>();
+  const monthlyMap = new Map<string, { actualTon: number; targetTon: number; workHours: number }>();
   const monthsInYear: string[] = [];
 
   for (const row of productionRows) {
@@ -72,13 +174,12 @@ function createProductionAggregates(
 
       const currentLine = lineMap.get(line) ?? {
         actualTon: 0,
-        planTon: 0,
+        targetTon: 0,
         workHours: 0,
         lastMonth: row.ym,
       };
 
       currentLine.actualTon += row.weight_ton;
-      currentLine.planTon += row.plan_ton;
       currentLine.workHours += row.work_hours;
       currentLine.lastMonth = row.ym > currentLine.lastMonth ? row.ym : currentLine.lastMonth;
       lineMap.set(line, currentLine);
@@ -103,14 +204,39 @@ function createProductionAggregates(
 
       const monthlyAggregate = monthlyMap.get(row.ym) ?? {
         actualTon: 0,
-        planTon: 0,
+        targetTon: 0,
         workHours: 0,
       };
       monthlyAggregate.actualTon += row.weight_ton;
-      monthlyAggregate.planTon += row.plan_ton;
       monthlyAggregate.workHours += row.work_hours;
       monthlyMap.set(row.ym, monthlyAggregate);
     }
+  }
+
+  for (const line of LINE_CODES) {
+    const target = resolveAnnualTargetTon(targetMap, planDayMap, activeYear, line);
+    const currentLine = lineMap.get(line) ?? {
+      actualTon: 0,
+      targetTon: 0,
+      workHours: 0,
+      lastMonth: "",
+    };
+
+    currentLine.targetTon = target.targetTon;
+    lineMap.set(line, currentLine);
+  }
+
+  for (let month = 1; month <= 12; month += 1) {
+    const ym = `${activeYear}-${String(month).padStart(2, "0")}`;
+    const targetTon = resolveMonthlyTargetTon(targetMap, planDayMap, activeYear, month);
+    const monthlyAggregate = monthlyMap.get(ym) ?? {
+      actualTon: 0,
+      targetTon: 0,
+      workHours: 0,
+    };
+
+    monthlyAggregate.targetTon = targetTon;
+    monthlyMap.set(ym, monthlyAggregate);
   }
 
   const productionMonths = sortUniqueMonths(monthsInYear);
@@ -121,6 +247,8 @@ function createProductionAggregates(
     materialMap,
     monthlyMap,
     productionMonths,
+    targetMap,
+    planDayMap,
   };
 }
 
@@ -129,7 +257,7 @@ function createGasAggregates(
   activeYear: number
 ) {
   const lineMap = new Map<LineCode, GasLineAggregate>();
-  const furnaceMap = new Map<number, { line: LineCode; usageM3: number; basisCounts: Record<string, number> }>();
+  const furnaceMap = new Map<number, { line: LineCode; usageM3: number; basisCounts: Record<GasBasis, number> }>();
   const basisLineMap = new Map<string, GasBasisLineAggregate>();
   const basisFurnaceMap = new Map<string, GasBasisFurnaceAggregate>();
 
@@ -142,7 +270,7 @@ function createGasAggregates(
 
     const lineAggregate = lineMap.get(row.line) ?? {
       usageM3: 0,
-      basisCounts: { 고지: 0, 자체: 0 },
+      basisCounts: createBasisCounts(),
     };
     lineAggregate.usageM3 += row.usage_m3;
     lineAggregate.basisCounts[row.basis] += 1;
@@ -158,7 +286,7 @@ function createGasAggregates(
     const furnaceAggregate = furnaceMap.get(row.furnace_no) ?? {
       line: row.line,
       usageM3: 0,
-      basisCounts: { 고지: 0, 자체: 0 },
+      basisCounts: createBasisCounts(),
     };
     furnaceAggregate.usageM3 += row.usage_m3;
     furnaceAggregate.basisCounts[row.basis] += 1;
@@ -205,8 +333,12 @@ function buildYearTrend(
 export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const store = await loadStore();
   const activeYear = getActiveYear(store.production, store.gas);
-  const { lineMap, productMap, materialMap, monthlyMap, productionMonths } =
-    createProductionAggregates(store.production, activeYear);
+  const { lineMap, productMap, materialMap, monthlyMap } = createProductionAggregates(
+    store.production,
+    activeYear,
+    store.targets,
+    store.planDays
+  );
   const {
     lineMap: gasLineMap,
     furnaceMap,
@@ -221,25 +353,25 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
 
   const yearTrend = buildYearTrend(store.production, years.slice(-3));
 
-  const lineSummaries = ["P5", "P8", "P15", "RM"].map((line) => {
+  const lineSummaries = LINE_CODES.map((line) => {
     const production = lineMap.get(line as LineCode) ?? {
       actualTon: 0,
-      planTon: 0,
+      targetTon: 0,
       workHours: 0,
       lastMonth: "",
     };
     const gas = gasLineMap.get(line as LineCode) ?? {
       usageM3: 0,
-      basisCounts: { 고지: 0, 자체: 0 },
+      basisCounts: createBasisCounts(),
     };
     const tonPerHour = safeDivide(production.actualTon, production.workHours);
     const gasUnit = safeDivide(gas.usageM3, production.actualTon);
-    const achievementRate = safeDivide(production.actualTon, production.planTon) * 100;
+    const achievementRate = safeDivide(production.actualTon, production.targetTon) * 100;
 
     return {
-      line: line as LineCode,
+      line,
       actualTon: round(production.actualTon),
-      planTon: round(production.planTon),
+      targetTon: round(production.targetTon),
       workHours: round(production.workHours, 1),
       tonPerHour: round(tonPerHour, 1),
       gasUsageM3: round(gas.usageM3, 0),
@@ -257,23 +389,24 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
 
   const totalProductionTon = lineSummaries.reduce((sum, item) => sum + item.actualTon, 0);
   const totalWorkHours = lineSummaries.reduce((sum, item) => sum + item.workHours, 0);
-  const totalPlanTon = lineSummaries.reduce((sum, item) => sum + item.planTon, 0);
+  const totalTargetTon = lineSummaries.reduce((sum, item) => sum + item.targetTon, 0);
   const totalGasUsage = lineSummaries.reduce((sum, item) => sum + item.gasUsageM3, 0);
 
-  const monthlyTrend = productionMonths.map((ym) => {
+  const monthlyTrend = Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const ym = `${activeYear}-${String(month).padStart(2, "0")}`;
     const production = monthlyMap.get(ym) ?? {
       actualTon: 0,
-      planTon: 0,
+      targetTon: 0,
       workHours: 0,
     };
     const lineGasTotal = store.gas
       .filter((row) => row.ym === ym && getYear(row.ym) === activeYear)
       .reduce((sum, row) => sum + row.usage_m3, 0);
-
     return {
       month: formatMonthLabel(ym),
       actualTon: round(production.actualTon),
-      planTon: round(production.planTon),
+      targetTon: round(production.targetTon),
       tonPerHour: round(safeDivide(production.actualTon, production.workHours), 1),
       gasUnit: round(safeDivide(lineGasTotal, production.actualTon), 1),
     };
@@ -315,11 +448,11 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   const gasByLine = ["P5", "P8", "P15", "RM"].map((line) => {
     const gas = gasLineMap.get(line as LineCode) ?? {
       usageM3: 0,
-      basisCounts: { 고지: 0, 자체: 0 },
+      basisCounts: createBasisCounts(),
     };
     const production = lineMap.get(line as LineCode) ?? {
       actualTon: 0,
-      planTon: 0,
+      targetTon: 0,
       workHours: 0,
       lastMonth: "",
     };
@@ -350,7 +483,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
         const aggregate = basisLineMap.get(`${basis}:${line}`) ?? { usageM3: 0 };
         const production = lineMap.get(line as LineCode) ?? {
           actualTon: 0,
-          planTon: 0,
+          targetTon: 0,
           workHours: 0,
           lastMonth: "",
         };
@@ -405,11 +538,11 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
     kpis: {
       totalProductionTon: round(totalProductionTon),
       totalWorkHours: round(totalWorkHours, 1),
-      totalPlanTon: round(totalPlanTon),
+      totalTargetTon: round(totalTargetTon),
       totalGasUsage: round(totalGasUsage, 0),
       avgTonPerHour: round(safeDivide(totalProductionTon, totalWorkHours), 1),
       avgGasUnit: round(safeDivide(totalGasUsage, totalProductionTon), 1),
-      targetAchievementRate: round(safeDivide(totalProductionTon, totalPlanTon) * 100, 1),
+      targetAchievementRate: round(safeDivide(totalProductionTon, totalTargetTon) * 100, 1),
     },
     lineSummaries,
     lineChartData: lineSummaries,

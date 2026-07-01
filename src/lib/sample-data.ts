@@ -6,6 +6,11 @@ import {
   type LineCode,
   type ProductionRecord,
 } from "@/lib/domain";
+import {
+  PLANT_DAILY_TARGET_TON,
+  type PlantPlanDayRecord,
+  type PlantTargetRecord,
+} from "@/lib/plant-model";
 import { safeDivide } from "@/lib/format";
 
 const PRODUCT_ORDER = Object.keys(PRODUCT_BENCHMARKS) as Array<
@@ -180,3 +185,24 @@ const productionSeed = buildProductionRows(months);
 
 export const seedProductionRows = productionSeed.rows;
 export const seedGasRows = buildGasRows(months, productionSeed.monthlyLineTotals);
+
+const PLAN_DAYS_BY_MONTH = [20, 19, 21, 20, 20, 20, 21, 20, 20, 20, 19, 18] as const;
+
+export const seedTargets: PlantTargetRecord[] = [2024, 2025, 2026].flatMap((year) =>
+  (["P5", "P8", "P15", "RM"] as const).map((lineCode) => ({
+    year,
+    lineCode,
+    dailyTargetTon: PLANT_DAILY_TARGET_TON[lineCode],
+  }))
+);
+
+export const seedPlanDays: PlantPlanDayRecord[] = [2024, 2025, 2026].flatMap((year) =>
+  (["P5", "P8", "P15", "RM"] as const).flatMap((lineCode) =>
+    PLAN_DAYS_BY_MONTH.map((days, index) => ({
+      year,
+      lineCode,
+      month: index + 1,
+      days,
+    }))
+  )
+);

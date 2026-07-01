@@ -11,19 +11,24 @@ import type {
   ImportSummary,
   ProductionRecord,
 } from "@/lib/domain";
-import { seedGasRows, seedProductionRows } from "@/lib/sample-data";
+import { seedGasRows, seedPlanDays, seedProductionRows, seedTargets } from "@/lib/sample-data";
+import type { PlantPlanDayRecord, PlantTargetRecord } from "@/lib/plant-model";
 import { createSupabaseServerClient, hasSupabaseAuthConfig } from "@/lib/supabase-auth";
 import { getSupabaseAdminClient, hasSupabaseConfig } from "@/lib/supabase";
 
 interface StoreState {
   production: ProductionRecord[];
   gas: GasReadingRecord[];
+  targets: PlantTargetRecord[];
+  planDays: PlantPlanDayRecord[];
   lastImport?: ImportSummary;
 }
 
 interface StorePayload {
   production: ProductionRecord[];
   gas: GasReadingRecord[];
+  targets: PlantTargetRecord[];
+  planDays: PlantPlanDayRecord[];
   source: DashboardSnapshot["source"];
   lastImport?: ImportSummary;
 }
@@ -33,6 +38,8 @@ const LOCAL_STORE_PATH = path.join(process.cwd(), ".forging-store.json");
 const memoryState: StoreState = {
   production: [...seedProductionRows],
   gas: [...seedGasRows],
+  targets: [...seedTargets],
+  planDays: [...seedPlanDays],
 };
 
 function makeKey(dataset: DatasetKind, row: ProductionRecord | GasReadingRecord): string {
@@ -59,6 +66,8 @@ function cloneState(state: StoreState): StoreState {
   return {
     production: [...state.production],
     gas: [...state.gas],
+    targets: [...state.targets],
+    planDays: [...state.planDays],
     lastImport: state.lastImport,
   };
 }
@@ -72,7 +81,7 @@ interface SupabaseLikeSelectQuery extends PromiseLike<{
 }
 
 interface SupabaseLikeClient {
-  from(table: "production" | "gas_reading" | "import_log"): {
+  from(table: "production" | "gas_reading" | "import_log" | "targets" | "plan_days"): {
     select(columns: string): SupabaseLikeSelectQuery;
     upsert(
       payload: Array<Record<string, unknown>>,
@@ -143,6 +152,10 @@ async function readLocalStore(): Promise<StorePayload | null> {
     const state: StoreState = {
       production: parsed.production as ProductionRecord[],
       gas: parsed.gas as GasReadingRecord[],
+      targets: Array.isArray(parsed.targets) ? (parsed.targets as PlantTargetRecord[]) : [...seedTargets],
+      planDays: Array.isArray(parsed.planDays)
+        ? (parsed.planDays as PlantPlanDayRecord[])
+        : [...seedPlanDays],
       lastImport: parsed.lastImport as ImportSummary | undefined,
     };
 
@@ -161,7 +174,7 @@ async function writeLocalStore(state: StoreState): Promise<void> {
 }
 
 async function readStoreFromClient(client: SupabaseLikeClient): Promise<StorePayload> {
-  const [productionResult, gasResult] = await Promise.all([
+  const [productionResult, gasResult, targetsResult, planDaysResult] = await Promise.all([
     client
       .from("production")
       .select("ym,line,product,material,weight_ton,work_hours,plan_ton")
@@ -172,6 +185,17 @@ async function readStoreFromClient(client: SupabaseLikeClient): Promise<StorePay
       .select("ym,furnace_no,line,usage_m3,basis")
       .order("ym", { ascending: true })
       .order("furnace_no", { ascending: true }),
+    client
+      .from("targets")
+      .select("year,line_code,daily_target_ton")
+      .order("year", { ascending: true })
+      .order("line_code", { ascending: true }),
+    client
+      .from("plan_days")
+      .select("year,line_code,month,days")
+      .order("year", { ascending: true })
+      .order("line_code", { ascending: true })
+      .order("month", { ascending: true }),
   ]);
 
   if (productionResult.error) {
@@ -182,11 +206,21 @@ async function readStoreFromClient(client: SupabaseLikeClient): Promise<StorePay
     throw gasResult.error;
   }
 
+  if (targetsResult.error) {
+    throw targetsResult.error;
+  }
+
+  if (planDaysResult.error) {
+    throw planDaysResult.error;
+  }
+
   const lastImport = await readLatestImportSummary(client);
 
   return {
     production: (productionResult.data ?? []) as unknown as ProductionRecord[],
     gas: (gasResult.data ?? []) as unknown as GasReadingRecord[],
+    targets: (targetsResult.data ?? []) as unknown as PlantTargetRecord[],
+    planDays: (planDaysResult.data ?? []) as unknown as PlantPlanDayRecord[],
     source: "supabase",
     lastImport,
   };
@@ -221,6 +255,8 @@ export async function loadStore(): Promise<StorePayload> {
     if (supabasePayload) {
       memoryState.production = [...supabasePayload.production];
       memoryState.gas = [...supabasePayload.gas];
+      memoryState.targets = [...supabasePayload.targets];
+      memoryState.planDays = [...supabasePayload.planDays];
       memoryState.lastImport = supabasePayload.lastImport;
       return supabasePayload;
     }
@@ -233,6 +269,8 @@ export async function loadStore(): Promise<StorePayload> {
   if (localPayload) {
     memoryState.production = [...localPayload.production];
     memoryState.gas = [...localPayload.gas];
+    memoryState.targets = [...localPayload.targets];
+    memoryState.planDays = [...localPayload.planDays];
     memoryState.lastImport = localPayload.lastImport;
     return localPayload;
   }
@@ -240,6 +278,8 @@ export async function loadStore(): Promise<StorePayload> {
   return {
     production: [...memoryState.production],
     gas: [...memoryState.gas],
+    targets: [...memoryState.targets],
+    planDays: [...memoryState.planDays],
     source: memoryState.lastImport ? "memory" : "seed",
     lastImport: memoryState.lastImport,
   };
@@ -333,6 +373,8 @@ export async function saveImportedRows(
       (await readLocalStore()) ?? {
         production: [...memoryState.production],
         gas: [...memoryState.gas],
+        targets: [...memoryState.targets],
+        planDays: [...memoryState.planDays],
         source: memoryState.lastImport ? "memory" : "seed",
         lastImport: memoryState.lastImport,
       };
@@ -340,6 +382,8 @@ export async function saveImportedRows(
     const nextState: StoreState = {
       production: [...currentStore.production],
       gas: [...currentStore.gas],
+      targets: [...currentStore.targets],
+      planDays: [...currentStore.planDays],
       lastImport: currentStore.lastImport,
     };
 
@@ -351,6 +395,8 @@ export async function saveImportedRows(
 
     memoryState.production = [...nextState.production];
     memoryState.gas = [...nextState.gas];
+    memoryState.targets = [...nextState.targets];
+    memoryState.planDays = [...nextState.planDays];
   }
 
   memoryState.lastImport = summary;

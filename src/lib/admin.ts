@@ -9,6 +9,7 @@ export interface ManagedProfile {
   email: string | null;
   fullName: string | null;
   role: AppRole;
+  lineCode: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,7 @@ function mapProfileRow(row: Record<string, unknown>): ManagedProfile | null {
     email: row.email ? String(row.email) : null,
     fullName: row.full_name ? String(row.full_name) : null,
     role: row.role,
+    lineCode: row.line_code ? String(row.line_code) : null,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
   };
@@ -47,7 +49,7 @@ export async function getManagedProfiles(context?: AuthContext | null): Promise<
 
   const { data, error } = await client
     .from("profiles")
-    .select("id,email,full_name,role,created_at,updated_at")
+    .select("id,email,full_name,role,line_code,created_at,updated_at")
     .order("updated_at", { ascending: false })
     .order("email", { ascending: true });
 
@@ -83,4 +85,3 @@ export async function hasAnyAdminProfiles(): Promise<boolean | null> {
 
   return (data?.length ?? 0) > 0;
 }
-

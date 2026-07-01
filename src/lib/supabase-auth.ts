@@ -13,6 +13,7 @@ export interface AuthUser {
 
 export interface AuthContext extends AuthUser {
   role: AppRole;
+  lineCode: string | null;
 }
 
 function readEnv(...names: string[]): string | null {
@@ -108,16 +109,21 @@ export async function getCurrentAuthContext(): Promise<AuthContext | null> {
   }
 
   let role: AppRole = "viewer";
+  let lineCode: string | null = null;
 
   try {
     const { data: profile } = await client
       .from("profiles")
-      .select("role")
+      .select("role,line_code")
       .eq("id", user.id)
       .maybeSingle();
 
     if (isAppRole(profile?.role)) {
       role = profile.role;
+    }
+
+    if (typeof profile?.line_code === "string" && profile.line_code.trim()) {
+      lineCode = profile.line_code.trim();
     }
   } catch {
     // Fall back to the least-privileged role when the profile lookup fails.
@@ -127,6 +133,7 @@ export async function getCurrentAuthContext(): Promise<AuthContext | null> {
     id: user.id,
     email: user.email ?? null,
     role,
+    lineCode,
   };
 }
 

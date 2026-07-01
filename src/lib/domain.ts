@@ -115,7 +115,7 @@ export interface DashboardSnapshot {
   kpis: {
     totalProductionTon: number;
     totalWorkHours: number;
-    totalPlanTon: number;
+    totalTargetTon: number;
     totalGasUsage: number;
     avgTonPerHour: number;
     avgGasUnit: number;
@@ -124,7 +124,7 @@ export interface DashboardSnapshot {
   lineSummaries: Array<{
     line: LineCode;
     actualTon: number;
-    planTon: number;
+    targetTon: number;
     workHours: number;
     tonPerHour: number;
     gasUsageM3: number;
@@ -136,7 +136,7 @@ export interface DashboardSnapshot {
   lineChartData: Array<{
     line: LineCode;
     actualTon: number;
-    planTon: number;
+    targetTon: number;
     achievementRate: number;
   }>;
   threeYearTrend: Array<{
@@ -149,7 +149,7 @@ export interface DashboardSnapshot {
   monthlyTrend: Array<{
     month: string;
     actualTon: number;
-    planTon: number;
+    targetTon: number;
     tonPerHour: number;
     gasUnit: number;
   }>;

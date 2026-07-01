@@ -184,11 +184,6 @@ function SmartFileCard({
       return;
     }
 
-    if (missingFields.length > 0) {
-      setMessage("자동 인식이 완전하지 않습니다. 아래 수동 탭에서 누락된 필드를 보완해 주세요.");
-      return;
-    }
-
     const formData = new FormData();
     formData.set("file", file);
     formData.set("dataset", currentDataset);
@@ -229,7 +224,7 @@ function SmartFileCard({
   const warningIssues = issues.filter((issue) => issue.severity === "warning");
   const errorIssues = issues.filter((issue) => issue.severity === "error");
   const canCommit = Boolean(
-    analysis && currentDataset && missingFields.length === 0 && !loadingAnalysis && !loadingCommit && !committed
+    analysis && currentDataset && !loadingAnalysis && !loadingCommit && !committed && !fileValidationMessage
   );
   const commitDisabledReason = fileValidationMessage
     ? fileValidationMessage
@@ -239,13 +234,11 @@ function SmartFileCard({
         ? "먼저 파일 분석을 완료해 주세요."
         : !currentDataset
           ? "자동 인식이 아직 데이터셋을 확정하지 못했습니다."
-          : missingFields.length > 0
-            ? `필수 필드가 아직 ${missingFields.length}개 매핑되지 않았습니다: ${missingFields.join(", ")}`
-            : loadingCommit
-              ? "적재 중입니다. 잠시만 기다려 주세요."
-              : committed
-                ? "이미 적재가 완료된 파일입니다."
-                : null;
+          : loadingCommit
+            ? "적재 중입니다. 잠시만 기다려 주세요."
+            : committed
+              ? "이미 적재가 완료된 파일입니다."
+              : null;
 
   return (
     <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.24)]">

@@ -216,7 +216,9 @@ function SmartFileCard({
       }
 
       onCommitted(payload.snapshot as DashboardSnapshot);
-      setMessage(`${payload.summary?.inserted ?? 0}건을 브라우저 변환 후 적재했습니다.`);
+      setMessage(
+        payload.message ?? `${payload.summary?.inserted ?? 0}건을 브라우저 변환 후 적재했습니다.`
+      );
       setIssues(payload.issues ?? []);
       setCommitted(true);
     } catch {

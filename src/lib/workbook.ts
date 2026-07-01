@@ -184,6 +184,10 @@ function resolveMapping(
     const headerName = mapping[field.key];
 
     if (!headerName) {
+      if (!field.required) {
+        continue;
+      }
+
       issues.push({
         severity: "error",
         field: field.key,

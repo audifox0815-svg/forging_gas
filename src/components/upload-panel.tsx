@@ -223,7 +223,9 @@ function DatasetForm({
         mapping: preview.suggestedMapping,
         selectedSheet: preview.selectedSheet,
         issues: payload.issues ?? [],
-        message: `${payload.summary?.inserted ?? 0}행을 적재했습니다.`,
+        message:
+          payload.message ??
+          `${payload.summary?.inserted ?? 0}행을 적재했습니다.`,
       });
       onImported(payload.snapshot as DashboardSnapshot);
     } catch {

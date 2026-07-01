@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        message: "업로드 권한이 없습니다. 관리자 또는 운영자 계정으로 다시 시도하세요.",
+        message: "업로드 권한이 없습니다. 관리자 또는 담당자 계정으로 다시 시도해 주세요.",
       },
       { status: 403 }
     );
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     mapping = JSON.parse(mappingRaw) as Record<string, string>;
   } catch {
     return NextResponse.json(
-      { ok: false, message: "컬럼 매핑을 읽지 못했습니다." },
+      { ok: false, message: "컬럼 매핑 JSON을 읽지 못했습니다." },
       { status: 400 }
     );
   }
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
   const result = parseWorkbookRows(buffer, dataset, mapping, sheetName);
   const errors = result.warnings.filter((issue) => issue.severity === "error");
 
-  if (errors.length > 0) {
+  if (result.rows.length === 0 && errors.length > 0) {
     return NextResponse.json(
       {
         ok: false,
@@ -121,6 +121,9 @@ export async function POST(request: Request) {
     snapshot,
     preview: result.preview,
     issues: result.warnings,
+    message:
+      errors.length > 0 && result.rows.length > 0
+        ? `일부 행은 건너뛰고 ${summary.inserted}건을 적재했습니다.`
+        : undefined,
   });
 }
-

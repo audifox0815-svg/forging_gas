@@ -74,6 +74,20 @@ function issueKey(issue: ImportIssue, index: number): string {
   return [issue.severity, issue.row ?? "x", issue.cell ?? "x", issue.message, index].join("|");
 }
 
+function createFileKey(file: File): string {
+  return [file.name, file.size, file.lastModified].join("|");
+}
+
+function createMappingSignature(dataset: DatasetKind, mapping: Record<string, string>): string {
+  return DATASET_CONFIGS[dataset].fields.map((field) => `${field.key}:${mapping[field.key] ?? ""}`).join("|");
+}
+
+function getMissingRequiredFields(dataset: DatasetKind, mapping: Record<string, string>): string[] {
+  return DATASET_CONFIGS[dataset].fields
+    .filter((field) => field.required && !mapping[field.key])
+    .map((field) => field.label);
+}
+
 const TEMPLATE_DOWNLOAD_URLS: Record<DatasetKind, string> = {
   production: "/api/templates/production",
   gas: "/api/templates/gas",
@@ -102,7 +116,9 @@ function DatasetForm({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const previewRequestIdRef = React.useRef(0);
   const previewActionRef = React.useRef<(sheetName?: string) => Promise<void>>(async () => {});
+  const commitActionRef = React.useRef<() => Promise<void>>(async () => {});
   const lastAutoPreviewFileKeyRef = React.useRef<string | null>(null);
+  const lastAutoCommitKeyRef = React.useRef<string | null>(null);
   const [dragging, setDragging] = React.useState(false);
 
   const updateState = (patch: Partial<DatasetUploadState>) => {
@@ -112,6 +128,7 @@ function DatasetForm({
   const setFile = (file: File | null) => {
     previewRequestIdRef.current += 1;
     lastAutoPreviewFileKeyRef.current = null;
+    lastAutoCommitKeyRef.current = null;
 
     if (!file) {
       updateState({
@@ -204,7 +221,7 @@ function DatasetForm({
       return;
     }
 
-    const fileKey = [state.file.name, state.file.size, state.file.lastModified].join("|");
+    const fileKey = createFileKey(state.file);
 
     if (lastAutoPreviewFileKeyRef.current === fileKey) {
       return;
@@ -274,6 +291,38 @@ function DatasetForm({
       });
     }
   };
+
+  React.useEffect(() => {
+    commitActionRef.current = handleCommit;
+  });
+
+  const missingRequiredFields = getMissingRequiredFields(dataset, state.mapping);
+  const autoCommitKey =
+    state.file && state.preview && !state.loadingPreview && !state.loadingCommit && missingRequiredFields.length === 0
+      ? [
+          createFileKey(state.file),
+          state.selectedSheet || state.preview.selectedSheet,
+          createMappingSignature(dataset, state.mapping),
+        ].join("::")
+      : null;
+
+  React.useEffect(() => {
+    if (!autoCommitKey) {
+      return;
+    }
+
+    if (lastAutoCommitKeyRef.current === autoCommitKey) {
+      return;
+    }
+
+    lastAutoCommitKeyRef.current = autoCommitKey;
+
+    const timeoutId = window.setTimeout(() => {
+      void commitActionRef.current();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [autoCommitKey]);
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();

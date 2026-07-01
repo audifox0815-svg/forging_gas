@@ -97,7 +97,6 @@ npm install
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 선택적으로 아래 별칭도 사용할 수 있습니다.
@@ -115,6 +114,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 - 절대로 클라이언트 코드나 브라우저에 노출하지 마세요.
 - 이미 `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY`를 쓰고 있다면 그대로 넣어도 됩니다.
 - 이 앱은 Next.js 서버에서 `NEXT_PUBLIC_*`, `SUPABASE_*`, `VITE_*`를 모두 읽도록 맞춰 두었습니다.
+- `SUPABASE_SERVICE_ROLE_KEY`는 선택 사항입니다. Supabase Auth로 운영할 때는 공개 URL + 공개 키만으로도 배포가 가능합니다.
 
 ### 3. 개발 서버 실행
 

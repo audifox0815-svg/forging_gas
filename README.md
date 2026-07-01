@@ -2,17 +2,16 @@
 
 현장에서 매월 작성하는 엑셀 파일만 업로드하면 생산량과 가스검침량을 자동으로 집계하고, 라인별 목표/실적과 시간당 생산량, 가스원단위를 한 화면에서 확인하는 운영용 웹앱입니다.
 
-## 무엇을 할 수 있나요
+## 핵심 기능
 
 - 생산량집계표 엑셀 업로드
 - 호기별 가스검침량 엑셀 업로드
 - 업로드 전 시트/컬럼 매핑 미리보기
-- 셀 단위 검증 실패 원인 표시
-- 라인별 연간 목표 vs 실적 대시보드
-- 제품별/재질별 시간당 생산량 비교
+- 라인별 연간 목표 vs 실적
+- 제품별/재질별 시간당 생산량
 - 태상 vs 태웅 가스원단위 비교
-- 가열로별, Product Mix별 원단위 분석
-- Supabase Auth를 이용한 운영자 로그인
+- 운영자용 샘플 엑셀 다운로드
+- 관리자용 역할 관리
 
 ## 기술 스택
 
@@ -30,6 +29,7 @@
    - 엑셀 드래그앤드롭
    - 시트/컬럼 매핑 미리보기
    - 검증 후 적재
+   - 샘플 엑셀 다운로드
 
 2. 생산성 대시보드
    - 라인별 연간 목표 vs 실적
@@ -46,7 +46,50 @@
    - 태상 vs 태웅 비교
    - 가열로별 원단위
    - Product Mix별 원단위
-   - 단위 기준 토글: 고지 / 자체
+   - 고지/자체 토글
+
+5. 역할 관리
+   - 관리자 전용
+   - 사용자 역할 수정
+   - 마지막 admin 계정 보호
+
+## 공용 모드
+
+이 앱은 로그인 없이도 기본 화면을 바로 사용할 수 있습니다.
+
+- 업로드와 조회는 공용 모드로 동작합니다.
+- 로그인은 관리자 역할 관리가 필요할 때만 사용하면 됩니다.
+- Supabase Auth가 설정되어 있어도, 세션이 없으면 게스트 모드로 열립니다.
+
+## 권한
+
+- `viewer`: 조회만 가능
+- `operator`: 조회 + 엑셀 업로드/적재 가능
+- `admin`: operator 권한 + 사용자 역할 관리 가능
+
+## 첫 admin 지정
+
+Supabase Auth를 사용할 경우, 첫 admin은 SQL Editor에서 한 번만 지정하면 됩니다.
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'admin@company.com';
+```
+
+이후부터는 관리자 계정으로 로그인해서 운영자를 `operator`로 바꾸는 방식으로 관리하면 됩니다.
+
+## 운영자용 템플릿 다운로드
+
+업로드 화면 상단에서 다음 샘플 파일을 다운로드할 수 있습니다.
+
+- 생산량집계표 템플릿
+- 가스검침량 템플릿
+
+템플릿 라우트:
+
+- `/api/templates/production`
+- `/api/templates/gas`
 
 ## 데이터 모델
 
@@ -80,7 +123,7 @@
 - 시간당 생산량 = `weight_ton / work_hours`
 - 가스원단위 = `라인가스 / 라인생산톤`
 
-모든 계산식은 화면에서 분자/분모가 함께 보이도록 설계했습니다. 단위가 맞지 않으면 경고 배지를 띄웁니다.
+모든 계산식은 화면에서 분자/분모를 함께 보여주도록 구성했습니다.
 
 ## 로컬 실행
 
@@ -90,33 +133,35 @@
 npm install
 ```
 
-### 2. 환경 변수 준비
+### 2. 환경 변수 설정
 
-프로젝트 루트에 `.env.local`을 만들고 아래 값을 넣습니다.
+프로젝트 루트의 `.env.local`에 아래 값을 넣습니다.
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-선택적으로 아래 별칭도 사용할 수 있습니다.
+선택 사항:
 
 ```bash
-SUPABASE_URL=your-supabase-url
-SUPABASE_PUBLISHABLE_KEY=your-publishable-key
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-주의:
+이 앱은 다음 별칭도 읽습니다.
 
-- `SUPABASE_SERVICE_ROLE_KEY`는 서버 전용입니다.
-- 절대로 클라이언트 코드나 브라우저에 노출하지 마세요.
-- 이미 `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY`를 쓰고 있다면 그대로 넣어도 됩니다.
-- 이 앱은 Next.js 서버에서 `NEXT_PUBLIC_*`, `SUPABASE_*`, `VITE_*`를 모두 읽도록 맞춰 두었습니다.
-- `SUPABASE_SERVICE_ROLE_KEY`는 선택 사항입니다. Supabase Auth로 운영할 때는 공개 URL + 공개 키만으로도 배포가 가능합니다.
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_SERVICE_ROLE_KEY`
 
-### 3. 개발 서버 실행
+`SUPABASE_SERVICE_ROLE_KEY`는 서버 전용입니다. 클라이언트에 노출하면 안 됩니다.
+
+### 3. 개발 서버
 
 ```bash
 npm run dev
@@ -134,30 +179,22 @@ npm run build
 ## Supabase 설정
 
 1. Supabase 프로젝트를 생성합니다.
-2. `supabase/schema.sql`을 실행해 테이블과 RLS 정책을 만듭니다.
+2. `supabase/schema.sql`을 실행해 테이블, RLS, 트리거, 함수, 인덱스를 만듭니다.
 3. Auth에서 이메일/비밀번호 로그인을 활성화합니다.
-4. 운영자 계정을 생성합니다.
-5. 서비스 롤 키는 서버 환경 변수로만 넣습니다.
+4. 첫 admin 계정을 SQL Editor에서 지정합니다.
+5. 운영 환경에는 서버 전용 `SUPABASE_SERVICE_ROLE_KEY`를 추가합니다.
 
-`import_log` 테이블에는 파일명, 적재 시간, 건수, 경고 사항, 생성자 정보가 저장됩니다.
+## 배포
 
-## 역할과 권한
+Vercel 배포 시 최소한 다음 환경 변수를 등록하세요.
 
-- `viewer`: 대시보드 조회만 가능
-- `operator`: 조회 + 엑셀 업로드/적재 가능
-- `admin`: operator 권한 + 사용자 역할 관리 가능
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-새로 가입한 계정은 기본적으로 `viewer`입니다. 첫 관리자 계정은 Supabase SQL Editor에서 직접 승격하세요.
+공용 모드에서 Supabase에 저장하고 싶다면 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. 이 키가 없으면 앱은 로컬 저장소로 fallback합니다.
 
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'admin@company.com';
-```
-
-이후부터는 관리자 계정으로 로그인해서 운영자를 `operator`로 바꾸는 방식으로 관리하면 됩니다.
-
-## 업로드 파일 규격
+## 업로드 규격
 
 ### 생산량집계표
 
@@ -171,7 +208,7 @@ where email = 'admin@company.com';
 - `work_hours`
 - `plan_ton`
 
-### 호기별 가스검침량
+### 가스검침량
 
 권장 컬럼:
 
@@ -181,50 +218,29 @@ where email = 'admin@company.com';
 - `usage_m3`
 - `basis`
 
-### 업로드 실패 시
+## 업로드 실패 시
 
-- 어떤 시트가 문제인지 표시합니다.
-- 어떤 셀이 비어 있는지 표시합니다.
-- 숫자 타입이 필요한 칸에 문자열이 들어오면 알려줍니다.
-- 라인/호기 매핑이 맞지 않으면 경고를 띄웁니다.
-
-## 샘플 데이터 만들기
-
-테스트용 엑셀 파일이 필요하면 아래 스크립트를 사용할 수 있습니다.
-
-```bash
-node scripts/make-sample-workbooks.js
-```
-
-## 운영 모드
-
-이 앱은 환경 변수가 없으면 데모 모드로 동작합니다.
-
-- 로그인 화면에서는 데모 모드를 안내합니다.
-- 홈 화면에서는 로컬 저장소를 사용해 집계 결과를 유지합니다.
-- Supabase Auth를 연결하면 실제 사용자 로그인으로 전환됩니다.
+- 어떤 시트가 문제인지 확인합니다.
+- 날짜 형식이 `YYYY-MM`인지 확인합니다.
+- 숫자 칸에 문자가 섞이지 않았는지 확인합니다.
+- `line` 값이 `P5`, `P8`, `P15`, `RM` 중 하나인지 확인합니다.
+- 가스 데이터는 호기 번호와 라인 매핑이 맞는지 확인합니다.
 
 ## 문제 해결
 
-- 로그인 화면이 바로 보이고 입력 폼이 안 나오면
+- 로그인 화면이 꼭 필요해 보이면
   - Supabase Auth 환경 변수가 설정되어 있는지 확인하세요.
+  - 게스트 모드로 쓰려면 로그인 없이 `/`로 바로 들어가면 됩니다.
 - 업로드 후 데이터가 안 보이면
-  - 적재가 성공했는지, 그리고 같은 라인의 `ym` 값이 맞는지 확인하세요.
-- 원단위 수치가 이상하면
-  - 분자와 분모, 그리고 적용 기준(`고지` / `자체`)을 함께 확인하세요.
+  - `SUPABASE_SERVICE_ROLE_KEY`가 있는지 확인하세요.
+  - 없으면 로컬 저장소로 fallback합니다.
+- 역할 관리 탭이 안 보이면
+  - `admin` 계정으로 로그인했는지 확인하세요.
 
-## 배포
+## 라우트
 
-Vercel 배포를 전제로 합니다.
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-
-이 3개를 Vercel 환경 변수에 등록한 뒤 배포하세요.
-
-## 참고
-
+- 대시보드: `/`
+- 로그인 보조 화면: `/login`
 - 업로드 API: `/api/import`
-- 로그인 화면: `/login`
-- 기본 대시보드: `/`
+- 템플릿 다운로드: `/api/templates/production`, `/api/templates/gas`
+

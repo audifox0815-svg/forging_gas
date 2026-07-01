@@ -184,6 +184,11 @@ function SmartFileCard({
       return;
     }
 
+    if (missingFields.length > 0) {
+      setMessage(`필수 열이 아직 ${missingFields.length}개 인식되지 않았습니다. 표 아래 매핑을 확인해 주세요.`);
+      return;
+    }
+
     const formData = new FormData();
     formData.set("file", file);
     formData.set("dataset", currentDataset);
@@ -224,7 +229,7 @@ function SmartFileCard({
   const warningIssues = issues.filter((issue) => issue.severity === "warning");
   const errorIssues = issues.filter((issue) => issue.severity === "error");
   const canCommit = Boolean(
-    analysis && currentDataset && !loadingAnalysis && !loadingCommit && !committed && !fileValidationMessage
+    analysis && currentDataset && missingFields.length === 0 && !loadingAnalysis && !loadingCommit && !committed && !fileValidationMessage
   );
   const commitDisabledReason = fileValidationMessage
     ? fileValidationMessage
@@ -234,6 +239,8 @@ function SmartFileCard({
         ? "먼저 파일 분석을 완료해 주세요."
         : !currentDataset
           ? "자동 인식이 아직 데이터셋을 확정하지 못했습니다."
+          : missingFields.length > 0
+            ? `필수 열 ${missingFields.length}개가 아직 부족합니다.`
           : loadingCommit
             ? "적재 중입니다. 잠시만 기다려 주세요."
             : committed

@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DATASET_CONFIGS, type DashboardSnapshot, type DatasetKind, type ImportIssue } from "@/lib/domain";
 import type { WorkbookPreview } from "@/lib/workbook";
 import { formatNumber } from "@/lib/format";
+import { SmartImportPanel } from "@/components/smart-upload-panel";
 import { CloudDownload, CloudUpload, FileSpreadsheet, RefreshCw, TriangleAlert } from "lucide-react";
 
 interface DatasetUploadState {
@@ -554,6 +555,8 @@ export function UploadPanel({ onCommitted }: UploadPanelProps) {
 
   return (
     <div className="space-y-4">
+      <SmartImportPanel onCommitted={onCommitted} />
+
       <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.24)]">
         <CardHeader>
           <CardTitle>운영자용 템플릿 다운로드</CardTitle>

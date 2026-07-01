@@ -246,6 +246,13 @@ function DatasetForm({
   const previewIssues = state.issues.filter((issue) => issue.severity !== "warning");
   const warningIssues = state.issues.filter((issue) => issue.severity === "warning");
   const preview = state.preview;
+  const commitDisabledReason = !state.file
+    ? "엑셀 파일을 먼저 선택해 주세요."
+    : state.loadingCommit
+      ? "검증 중에는 잠시 기다려 주세요."
+      : !state.preview
+        ? "1. 미리보기를 눌러 시트/컬럼 검증을 먼저 완료해야 합니다."
+        : null;
 
   return (
     <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.35)] backdrop-blur">
@@ -485,6 +492,8 @@ function DatasetForm({
               "2. 검증 후 적재"
             )}
           </Button>
+
+          {commitDisabledReason ? <p className="text-xs text-muted-foreground">{commitDisabledReason}</p> : null}
         </div>
 
         {preview ? (

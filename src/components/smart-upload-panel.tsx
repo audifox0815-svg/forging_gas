@@ -231,6 +231,21 @@ function SmartFileCard({
   const canCommit = Boolean(
     analysis && currentDataset && missingFields.length === 0 && !loadingAnalysis && !loadingCommit && !committed
   );
+  const commitDisabledReason = fileValidationMessage
+    ? fileValidationMessage
+    : loadingAnalysis
+      ? "브라우저가 파일을 분석하는 중입니다."
+      : !analysis
+        ? "먼저 파일 분석을 완료해 주세요."
+        : !currentDataset
+          ? "자동 인식이 아직 데이터셋을 확정하지 못했습니다."
+          : missingFields.length > 0
+            ? `필수 필드가 아직 ${missingFields.length}개 매핑되지 않았습니다: ${missingFields.join(", ")}`
+            : loadingCommit
+              ? "적재 중입니다. 잠시만 기다려 주세요."
+              : committed
+                ? "이미 적재가 완료된 파일입니다."
+                : null;
 
   return (
     <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.24)]">
@@ -467,6 +482,8 @@ function SmartFileCard({
                 "브라우저 변환 후 적재"
               )}
             </Button>
+
+            {commitDisabledReason ? <p className="text-xs text-muted-foreground">{commitDisabledReason}</p> : null}
           </>
         ) : (
           <div className="rounded-2xl border border-dashed border-border/70 bg-background/30 p-6 text-sm text-muted-foreground">

@@ -3,7 +3,12 @@
 import * as React from "react";
 
 import { analyzeSmartWorkbook, type SmartWorkbookAnalysis } from "@/lib/smart-workbook";
-import { DATASET_CONFIGS, type DashboardSnapshot, type DatasetKind, type ImportIssue } from "@/lib/domain";
+import {
+  DATASET_CONFIGS,
+  type DashboardSnapshot,
+  type DatasetKind,
+  type ImportIssue,
+} from "@/lib/domain";
 import { formatNumber } from "@/lib/format";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CloudUpload, FileSpreadsheet, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
+import { CloudUpload, FileSpreadsheet, RefreshCw, Sparkles, TriangleAlert, Trash2 } from "lucide-react";
 
 type SmartMode = "auto" | DatasetKind;
 
@@ -25,6 +30,14 @@ const MAX_IMPORT_BYTES = 16 * 1024 * 1024;
 
 function formatFileSize(bytes: number): string {
   return `${formatNumber(bytes / 1024 / 1024, 1)}MB`;
+}
+
+function isExcelFile(file: File): boolean {
+  return /\.(xlsx|xls)$/i.test(file.name);
+}
+
+function createFileKey(file: File): string {
+  return [file.name, file.size, file.lastModified].join("|");
 }
 
 function missingRequiredFields(analysis: SmartWorkbookAnalysis | null): string[] {
@@ -77,100 +90,97 @@ function SmartSummary({ analysis }: { analysis: SmartWorkbookAnalysis }) {
   );
 }
 
-function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
-  const [mode, setMode] = React.useState<SmartMode>("auto");
-  const [file, setFile] = React.useState<File | null>(null);
+function SmartFileCard({
+  file,
+  mode,
+  onRemove,
+  onCommitted,
+}: {
+  file: File;
+  mode: SmartMode;
+  onRemove(): void;
+  onCommitted(snapshot: DashboardSnapshot): void;
+}) {
   const [analysis, setAnalysis] = React.useState<SmartWorkbookAnalysis | null>(null);
   const [sheetChoice, setSheetChoice] = React.useState<string>("");
   const [loadingAnalysis, setLoadingAnalysis] = React.useState(false);
   const [loadingCommit, setLoadingCommit] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
   const [issues, setIssues] = React.useState<ImportIssue[]>([]);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [committed, setCommitted] = React.useState(false);
   const requestIdRef = React.useRef(0);
+
   const currentDataset: DatasetKind | null = mode === "auto" ? analysis?.dataset ?? null : mode;
   const targetLabel = currentDataset ? DATASET_CONFIGS[currentDataset].title : "자동 인식";
   const missingFields = missingRequiredFields(analysis);
-
-  const resetState = React.useCallback(() => {
-    setFile(null);
-    setAnalysis(null);
-    setSheetChoice("");
-    setLoadingAnalysis(false);
-    setLoadingCommit(false);
-    setMessage(null);
-    setIssues([]);
-  }, []);
-
-  const setSelectedFile = React.useCallback((nextFile: File | null) => {
-    if (!nextFile) {
-      resetState();
-      return;
-    }
-
-    if (nextFile.size > MAX_IMPORT_BYTES) {
-      setFile(nextFile);
-      setAnalysis(null);
-      setSheetChoice("");
-      setIssues([]);
-      setLoadingAnalysis(false);
-      setMessage("파일이 너무 큽니다. 16MB 이하 파일만 업로드해 주세요.");
-      return;
-    }
-
-    setFile(nextFile);
-    setAnalysis(null);
-    setSheetChoice("");
-    setLoadingAnalysis(Boolean(nextFile));
-    setMessage(null);
-    setIssues([]);
-  }, [resetState]);
+  const fileValidationMessage = !isExcelFile(file)
+    ? "엑셀 파일(.xlsx, .xls)만 인식할 수 있습니다."
+    : file.size > MAX_IMPORT_BYTES
+      ? "파일이 너무 큽니다. 16MB 이하 파일만 업로드해 주세요."
+      : null;
+  const statusLabel = committed
+    ? "적재 완료"
+    : loadingCommit
+      ? "적재 중"
+      : loadingAnalysis
+        ? "분석 중"
+        : analysis
+          ? "분석 완료"
+          : "대기 중";
 
   React.useEffect(() => {
-    if (!file) {
-      return;
-    }
-
-    if (file.size > MAX_IMPORT_BYTES) {
+    if (fileValidationMessage) {
       return;
     }
 
     let active = true;
     const requestId = ++requestIdRef.current;
+    const timeoutId = window.setTimeout(() => {
+      if (!active || requestId !== requestIdRef.current) {
+        return;
+      }
 
-    analyzeSmartWorkbook(file, mode === "auto" ? null : mode, sheetChoice || undefined)
-      .then((next) => {
-        if (!active || requestId !== requestIdRef.current) {
-          return;
-        }
+      setLoadingAnalysis(true);
+      setAnalysis(null);
+      setIssues([]);
+      setMessage(null);
+      setCommitted(false);
 
-        setAnalysis(next);
-        setIssues(next.warnings);
-        setMessage("브라우저에서 표준 템플릿으로 변환했습니다. 필요하면 아래 수동 탭에서 더 조정할 수 있습니다.");
-      })
-      .catch(() => {
-        if (!active || requestId !== requestIdRef.current) {
-          return;
-        }
+      analyzeSmartWorkbook(file, mode === "auto" ? null : mode, sheetChoice || undefined)
+        .then((next) => {
+          if (!active || requestId !== requestIdRef.current) {
+            return;
+          }
 
-        setAnalysis(null);
-        setIssues([]);
-        setMessage("브라우저에서 엑셀을 읽지 못했습니다. 다른 파일인지 확인해 주세요.");
-      })
-      .finally(() => {
-        if (active && requestId === requestIdRef.current) {
-          setLoadingAnalysis(false);
-        }
-      });
+          setAnalysis(next);
+          setIssues(next.warnings);
+          setMessage("브라우저에서 표준 템플릿으로 변환했습니다. 필요하면 아래 수동 탭에서 더 조정할 수 있습니다.");
+        })
+        .catch(() => {
+          if (!active || requestId !== requestIdRef.current) {
+            return;
+          }
+
+          setAnalysis(null);
+          setIssues([]);
+          setMessage("브라우저에서 엑셀을 읽지 못했습니다. 다른 파일인지 확인해 주세요.");
+        })
+        .finally(() => {
+          if (active && requestId === requestIdRef.current) {
+            setLoadingAnalysis(false);
+          }
+        });
+    }, 0);
 
     return () => {
       active = false;
+      window.clearTimeout(timeoutId);
     };
-  }, [file, mode, sheetChoice]);
+  }, [file, fileValidationMessage, mode, sheetChoice]);
 
   const commitToServer = async () => {
-    if (!file || !analysis || !currentDataset) {
-      setMessage("먼저 엑셀을 선택해 주세요.");
+    if (!analysis || !currentDataset) {
+      setMessage("먼저 파일 분석을 완료해 주세요.");
       return;
     }
 
@@ -208,12 +218,7 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
       onCommitted(payload.snapshot as DashboardSnapshot);
       setMessage(`${payload.summary?.inserted ?? 0}건을 브라우저 변환 후 적재했습니다.`);
       setIssues(payload.issues ?? []);
-      setFile(null);
-      setAnalysis(null);
-      setSheetChoice("");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      setCommitted(true);
     } catch {
       setMessage("서버에 적재하는 동안 오류가 발생했습니다.");
     } finally {
@@ -221,140 +226,75 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
     }
   };
 
-  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const nextFile = event.dataTransfer.files?.[0] ?? null;
-    setSelectedFile(nextFile);
-  };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedFile(event.target.files?.[0] ?? null);
-  };
-
   const warningIssues = issues.filter((issue) => issue.severity === "warning");
   const errorIssues = issues.filter((issue) => issue.severity === "error");
-  const canCommit = Boolean(file && analysis && currentDataset && missingFields.length === 0);
+  const canCommit = Boolean(
+    analysis && currentDataset && missingFields.length === 0 && !loadingAnalysis && !loadingCommit && !committed
+  );
 
   return (
     <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.24)]">
-      <CardHeader className="space-y-2">
+      <CardHeader className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">
             <Sparkles className="mr-1 size-3" />
-            스마트 업로드
+            파일별 분석
           </Badge>
           <Badge variant="outline">브라우저 1차 변환</Badge>
           <Badge variant="outline">서버 최종 검증</Badge>
+          <Badge variant={committed ? "secondary" : "outline"}>{statusLabel}</Badge>
         </div>
-        <CardTitle>브라우저에서 템플릿으로 자동 변환</CardTitle>
-        <CardDescription>
-          엑셀을 그대로 올리면 브라우저가 먼저 시트와 컬럼을 읽어 표준 템플릿으로 바꾸고, 서버가 다시
-          검증한 뒤 적재합니다.
-        </CardDescription>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <CardTitle className="text-base sm:text-lg">{file.name}</CardTitle>
+            <CardDescription className="max-w-2xl">
+              {mode === "auto"
+                ? "각 파일을 브라우저가 따로 읽어서 생산량집계표인지 가스검침량인지 자동으로 구분합니다."
+                : `${DATASET_CONFIGS[mode].title} 형식으로 읽습니다. 파일마다 개별적으로 분석하고 적재할 수 있습니다.`}
+            </CardDescription>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span>{formatFileSize(file.size)}</span>
+              <span>·</span>
+              <span>{loadingAnalysis ? "분석 중" : targetLabel}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onRemove} disabled={loadingCommit}>
+              <Trash2 className="mr-2 size-4" />
+              제거
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <Tabs
-          value={mode}
-          onValueChange={(next) => {
-            setMode(next as SmartMode);
-            setLoadingAnalysis(Boolean(file));
-          }}
-          className="space-y-4"
-        >
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="auto">자동 인식</TabsTrigger>
-            <TabsTrigger value="production">생산량집계표</TabsTrigger>
-            <TabsTrigger value="gas">가스검침량</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div
-          className="rounded-2xl border border-dashed border-border/70 bg-background/40 p-5 transition-colors"
-          onDragOver={(event) => {
-            event.preventDefault();
-          }}
-          onDrop={onDrop}
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <CloudUpload className="size-4 text-primary" />
-                <span className="text-sm font-medium">엑셀을 여기로 끌어오세요</span>
-              </div>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                생산량집계표나 가스검침량 파일을 올리면 브라우저가 표준 필드로 자동 변환합니다.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                <FileSpreadsheet className="mr-2 size-4" />
-                파일 선택
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={commitToServer}
-                disabled={!canCommit || loadingAnalysis || loadingCommit}
-              >
-                {loadingCommit ? (
-                  <>
-                    <RefreshCw className="mr-2 size-4 animate-spin" />
-                    적재 중...
-                  </>
-                ) : (
-                  "브라우저 변환 후 적재"
-                )}
-              </Button>
-            </div>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">.xlsx / .xls</Badge>
-            <Badge variant="outline">16MB 이하</Badge>
-            <Badge variant="outline">브라우저 자동 인식</Badge>
-          </div>
-        </div>
-
-        {file ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-background/60 px-4 py-3 text-sm lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-              <FileSpreadsheet className="size-4 text-primary" />
-              <div>
-                <div className="font-medium">{file.name}</div>
-                <div className="text-xs text-muted-foreground">{formatFileSize(file.size)}</div>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">
-                {loadingAnalysis ? "브라우저 분석 중..." : targetLabel}
-              </Badge>
-              <Button type="button" variant="ghost" size="sm" onClick={resetState}>
-                초기화
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <Card className="border-dashed bg-background/30">
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              아직 업로드된 파일이 없습니다. 엑셀을 넣으면 표준 템플릿으로 먼저 변환해서 보여줍니다.
-            </CardContent>
-          </Card>
-        )}
-
-        {message ? (
+        {fileValidationMessage ? (
+          <Alert variant="destructive">
+            <TriangleAlert className="size-4" />
+            <AlertTitle>파일 확인</AlertTitle>
+            <AlertDescription>{fileValidationMessage}</AlertDescription>
+          </Alert>
+        ) : message ? (
           <Alert>
             <AlertTitle>상태</AlertTitle>
             <AlertDescription>{message}</AlertDescription>
           </Alert>
         ) : null}
 
-        {analysis ? (
+        {loadingAnalysis ? (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-background/30 p-6">
+            <div className="flex items-center gap-3">
+              <RefreshCw className="size-4 animate-spin text-primary" />
+              <div>
+                <div className="text-sm font-medium">브라우저가 파일을 읽는 중입니다.</div>
+                <div className="text-xs text-muted-foreground">
+                  원본 시트와 열을 분석해서 표준 템플릿으로 바꾸고 있습니다.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : analysis ? (
           <>
             <SmartSummary analysis={analysis} />
 
@@ -365,8 +305,8 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
                   value={sheetChoice || analysis.selectedSheet}
                   onValueChange={(next) => {
                     setSheetChoice(next ?? "");
-                    setLoadingAnalysis(Boolean(file));
                   }}
+                  disabled={loadingCommit}
                 >
                   <SelectTrigger className="w-full sm:w-80">
                     <SelectValue placeholder="시트를 선택해 주세요." />
@@ -392,8 +332,12 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
                     원본 열을 브라우저가 템플릿 필드로 바꾼 결과입니다.
                   </p>
                 </div>
-                <Badge variant={missingFields.length > 0 ? "destructive" : "secondary"}>
-                  {missingFields.length > 0 ? "누락 필드 있음" : "적재 가능"}
+                <Badge variant={missingFields.length > 0 ? "destructive" : committed ? "secondary" : "outline"}>
+                  {missingFields.length > 0
+                    ? "누락 필드 있음"
+                    : committed
+                      ? "적재 완료"
+                      : "적재 가능"}
                 </Badge>
               </div>
 
@@ -464,7 +408,10 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={Math.max(analysis.fieldMappings.length, 1)} className="py-8 text-center text-muted-foreground">
+                        <TableCell
+                          colSpan={Math.max(analysis.fieldMappings.length, 1)}
+                          className="py-8 text-center text-muted-foreground"
+                        >
                           표준화할 행이 없습니다.
                         </TableCell>
                       </TableRow>
@@ -495,6 +442,7 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
                 <AlertDescription>
                   {errorIssues.map((issue, index) => (
                     <div key={issueKey(issue, index)} className="mt-1">
+                      {issue.cell ? `${issue.cell}: ` : ""}
                       {issue.message}
                     </div>
                   ))}
@@ -502,11 +450,252 @@ function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
               </Alert>
             ) : null}
 
-            <div className="rounded-2xl border border-border/70 bg-background/40 p-4 text-sm text-muted-foreground">
-              브라우저 인식이 완벽하지 않은 경우에는 아래의 일반 업로드 탭에서 직접 매핑을 조정할 수 있습니다.
-            </div>
+            <Button
+              type="button"
+              className="w-full"
+              onClick={commitToServer}
+              disabled={!canCommit}
+            >
+              {loadingCommit ? (
+                <>
+                  <RefreshCw className="mr-2 size-4 animate-spin" />
+                  적재 중...
+                </>
+              ) : committed ? (
+                "적재 완료"
+              ) : (
+                "브라우저 변환 후 적재"
+              )}
+            </Button>
           </>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-background/30 p-6 text-sm text-muted-foreground">
+            파일을 넣으면 브라우저가 먼저 표준 템플릿으로 바꿔 보여줍니다.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function describeQueueMessage(
+  acceptedCount: number,
+  skippedDuplicateCount: number,
+  skippedLargeCount: number,
+  skippedUnsupportedCount: number
+): string | null {
+  const parts: string[] = [];
+
+  if (acceptedCount > 0) {
+    parts.push(`${acceptedCount}개 파일을 추가했습니다.`);
+  }
+
+  if (skippedDuplicateCount > 0) {
+    parts.push(`중복 ${skippedDuplicateCount}개를 제외했습니다.`);
+  }
+
+  if (skippedLargeCount > 0) {
+    parts.push(`16MB 초과 ${skippedLargeCount}개를 제외했습니다.`);
+  }
+
+  if (skippedUnsupportedCount > 0) {
+    parts.push(`엑셀이 아닌 파일 ${skippedUnsupportedCount}개를 제외했습니다.`);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+function SmartImportPanel({ onCommitted }: SmartUploadPanelProps) {
+  const [mode, setMode] = React.useState<SmartMode>("auto");
+  const [files, setFiles] = React.useState<File[]>([]);
+  const [message, setMessage] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+
+  const clearFiles = React.useCallback(() => {
+    setFiles([]);
+    setMessage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const appendFiles = React.useCallback(
+    (incomingFiles: FileList | File[]) => {
+      const nextFiles = Array.from(incomingFiles);
+      if (nextFiles.length === 0) {
+        return;
+      }
+
+      const existingKeys = new Set(files.map(createFileKey));
+      const accepted: File[] = [];
+      let skippedDuplicateCount = 0;
+      let skippedLargeCount = 0;
+      let skippedUnsupportedCount = 0;
+
+      for (const file of nextFiles) {
+        if (!isExcelFile(file)) {
+          skippedUnsupportedCount += 1;
+          continue;
+        }
+
+        if (file.size > MAX_IMPORT_BYTES) {
+          skippedLargeCount += 1;
+          continue;
+        }
+
+        const key = createFileKey(file);
+        if (existingKeys.has(key) || accepted.some((item) => createFileKey(item) === key)) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
+        accepted.push(file);
+      }
+
+      if (accepted.length > 0) {
+        setFiles((current) => [...current, ...accepted]);
+      }
+
+      setMessage(describeQueueMessage(accepted.length, skippedDuplicateCount, skippedLargeCount, skippedUnsupportedCount));
+    },
+    [files]
+  );
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    appendFiles(event.target.files ?? []);
+    event.currentTarget.value = "";
+  };
+
+  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    appendFiles(event.dataTransfer.files);
+  };
+
+  const fileCount = files.length;
+
+  return (
+    <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.24)]">
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">
+            <Sparkles className="mr-1 size-3" />
+            다중 파일 업로드
+          </Badge>
+          <Badge variant="outline">브라우저 1차 변환</Badge>
+          <Badge variant="outline">서버 최종 검증</Badge>
+        </div>
+        <CardTitle>브라우저에서 템플릿으로 자동 변환</CardTitle>
+        <CardDescription>
+          엑셀을 여러 개 한 번에 올리면 파일마다 브라우저가 먼저 시트와 컬럼을 읽어 표준 템플릿으로 바꾸고, 서버가
+          다시 검증한 뒤 적재합니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <Tabs
+          value={mode}
+          onValueChange={(next) => {
+            setMode(next as SmartMode);
+          }}
+          className="space-y-4"
+        >
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="auto">자동 인식</TabsTrigger>
+            <TabsTrigger value="production">생산량집계표</TabsTrigger>
+            <TabsTrigger value="gas">가스검침량</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div
+          className="rounded-2xl border border-dashed border-border/70 bg-background/40 p-5 transition-colors"
+          onDragOver={(event) => {
+            event.preventDefault();
+          }}
+          onDrop={onDrop}
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <CloudUpload className="size-4 text-primary" />
+                <span className="text-sm font-medium">엑셀을 여러 개 끌어오세요</span>
+              </div>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                각 파일은 별도 카드로 분석됩니다. 같은 달의 생산량집계표와 가스검침량을 함께 올려도 됩니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                <FileSpreadsheet className="mr-2 size-4" />
+                파일 선택
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={clearFiles} disabled={fileCount === 0}>
+                전체 지우기
+              </Button>
+            </div>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            multiple
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline">.xlsx / .xls</Badge>
+            <Badge variant="outline">파일별 16MB 이하</Badge>
+            <Badge variant="outline">브라우저 자동 인식</Badge>
+            <Badge variant="outline">총 {fileCount}개 파일</Badge>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">선택 파일</div>
+            <div className="mt-2 text-2xl font-semibold">{fileCount}개</div>
+            <div className="text-xs text-muted-foreground">각 파일을 카드별로 따로 분석합니다.</div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">총 용량</div>
+            <div className="mt-2 text-2xl font-semibold">{formatFileSize(totalSize)}</div>
+            <div className="text-xs text-muted-foreground">16MB를 넘는 파일은 자동으로 제외됩니다.</div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">분석 기준</div>
+            <div className="mt-2 text-sm font-medium">{mode === "auto" ? "자동 인식" : DATASET_CONFIGS[mode].title}</div>
+            <div className="text-xs text-muted-foreground">모든 파일에 동일한 기준을 적용합니다.</div>
+          </div>
+        </div>
+
+        {message ? (
+          <Alert>
+            <AlertTitle>상태</AlertTitle>
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
         ) : null}
+
+        {fileCount > 0 ? (
+          <div className="space-y-4">
+            {files.map((file) => (
+              <SmartFileCard
+                key={createFileKey(file)}
+                file={file}
+                mode={mode}
+                onRemove={() => {
+                  setFiles((current) => current.filter((item) => createFileKey(item) !== createFileKey(file)));
+                }}
+                onCommitted={onCommitted}
+              />
+            ))}
+          </div>
+        ) : (
+          <Card className="border-dashed bg-background/30">
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">
+              아직 업로드된 파일이 없습니다. 여러 개의 엑셀을 한 번에 넣으면 각각 별도 카드로 분석해서 보여줍니다.
+            </CardContent>
+          </Card>
+        )}
       </CardContent>
     </Card>
   );

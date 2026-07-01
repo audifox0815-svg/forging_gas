@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getDashboardSnapshot } from "@/lib/dashboard";
-import { type DatasetKind, DATASET_KINDS } from "@/lib/domain";
-import { getCurrentUser, hasSupabaseAuthConfig } from "@/lib/supabase-auth";
+import { DATASET_KINDS, type DatasetKind } from "@/lib/domain";
+import type { AppRole } from "@/lib/access";
+import { canImportRole } from "@/lib/access";
+import { getCurrentAuthContext, hasSupabaseAuthConfig } from "@/lib/supabase-auth";
 import { buildWorkbookPreview, parseWorkbookRows } from "@/lib/workbook";
 import { saveImportedRows } from "@/lib/store";
 
@@ -21,8 +23,10 @@ function parseMode(value: string | null): "preview" | "commit" {
 }
 
 export async function POST(request: Request) {
+  let currentUserRole: AppRole | null = null;
+
   if (hasSupabaseAuthConfig()) {
-    const currentUser = await getCurrentUser();
+    const currentUser = await getCurrentAuthContext();
 
     if (!currentUser) {
       return NextResponse.json(
@@ -30,6 +34,8 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
+
+    currentUserRole = currentUser.role;
   }
 
   const formData = await request.formData();
@@ -54,8 +60,18 @@ export async function POST(request: Request) {
 
   if (file.size > MAX_IMPORT_BYTES) {
     return NextResponse.json(
-      { ok: false, message: "파일이 너무 큽니다. 16MB 이하 파일로 업로드해주세요." },
+      { ok: false, message: "파일이 너무 큽니다. 16MB 이하 파일로 업로드해 주세요." },
       { status: 413 }
+    );
+  }
+
+  if (mode === "commit" && hasSupabaseAuthConfig() && !canImportRole(currentUserRole)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "업로드 권한이 없습니다. 관리자 또는 운영자 계정으로 다시 시도하세요.",
+      },
+      { status: 403 }
     );
   }
 
@@ -92,7 +108,7 @@ export async function POST(request: Request) {
         mode,
         preview: result.preview,
         issues: result.warnings,
-        message: "검증에 실패했습니다. 셀 위치를 확인해주세요.",
+        message: "검증에 실패했습니다. 오류 위치를 확인해 주세요.",
       },
       { status: 422 }
     );

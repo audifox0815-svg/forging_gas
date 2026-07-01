@@ -4,9 +4,15 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
+import { isAppRole, type AppRole } from "@/lib/access";
+
 export interface AuthUser {
   id: string;
   email: string | null;
+}
+
+export interface AuthContext extends AuthUser {
+  role: AppRole;
 }
 
 export function getSupabaseAuthUrl(): string | null {
@@ -72,7 +78,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient | nul
   );
 }
 
-export async function getCurrentUser(): Promise<AuthUser | null> {
+export async function getCurrentAuthContext(): Promise<AuthContext | null> {
   const client = await createSupabaseServerClient();
 
   if (!client) {
@@ -88,8 +94,38 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     return null;
   }
 
+  let role: AppRole = "viewer";
+
+  try {
+    const { data: profile } = await client
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (isAppRole(profile?.role)) {
+      role = profile.role;
+    }
+  } catch {
+    // Fall back to the least-privileged role when the profile lookup fails.
+  }
+
   return {
     id: user.id,
     email: user.email ?? null,
+    role,
+  };
+}
+
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const context = await getCurrentAuthContext();
+
+  if (!context) {
+    return null;
+  }
+
+  return {
+    id: context.id,
+    email: context.email,
   };
 }

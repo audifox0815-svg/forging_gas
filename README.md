@@ -137,6 +137,22 @@ npm run build
 
 `import_log` 테이블에는 파일명, 적재 시간, 건수, 경고 사항, 생성자 정보가 저장됩니다.
 
+## 역할과 권한
+
+- `viewer`: 대시보드 조회만 가능
+- `operator`: 조회 + 엑셀 업로드/적재 가능
+- `admin`: operator 권한 + 사용자 역할 관리 가능
+
+새로 가입한 계정은 기본적으로 `viewer`입니다. 첫 관리자 계정은 Supabase SQL Editor에서 직접 승격하세요.
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'admin@company.com';
+```
+
+이후부터는 관리자 계정으로 로그인해서 운영자를 `operator`로 바꾸는 방식으로 관리하면 됩니다.
+
 ## 업로드 파일 규격
 
 ### 생산량집계표

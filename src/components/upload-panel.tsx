@@ -35,7 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DATASET_CONFIGS, type DashboardSnapshot, type DatasetKind, type ImportIssue } from "@/lib/domain";
 import type { WorkbookPreview } from "@/lib/workbook";
 import { formatNumber } from "@/lib/format";
-import { CloudUpload, FileSpreadsheet, RefreshCw, TriangleAlert } from "lucide-react";
+import { CloudDownload, CloudUpload, FileSpreadsheet, RefreshCw, TriangleAlert } from "lucide-react";
 
 interface DatasetUploadState {
   file: File | null;
@@ -71,6 +71,19 @@ function formatFileSize(bytes: number): string {
 
 function issueKey(issue: ImportIssue, index: number): string {
   return [issue.severity, issue.row ?? "x", issue.cell ?? "x", issue.message, index].join("|");
+}
+
+const TEMPLATE_DOWNLOAD_URLS: Record<DatasetKind, string> = {
+  production: "/api/templates/production",
+  gas: "/api/templates/gas",
+};
+
+function downloadTemplate(dataset: DatasetKind) {
+  const link = document.createElement("a");
+  link.href = TEMPLATE_DOWNLOAD_URLS[dataset];
+  link.rel = "noreferrer";
+  link.target = "_self";
+  link.click();
 }
 
 function DatasetForm({
@@ -540,7 +553,55 @@ export function UploadPanel({ onCommitted }: UploadPanelProps) {
   };
 
   return (
-    <Tabs defaultValue="production" className="space-y-4">
+    <div className="space-y-4">
+      <Card className="border-border/80 bg-card/80 shadow-[0_12px_45px_rgba(0,0,0,0.24)]">
+        <CardHeader>
+          <CardTitle>운영자용 템플릿 다운로드</CardTitle>
+          <CardDescription>
+            현장 엑셀 양식이 헷갈릴 때는 아래 샘플 파일을 내려받아 그대로 작성하세요. 헤더와 예시 행이
+            들어 있어 처음 쓰는 분도 바로 시작할 수 있습니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          {(Object.keys(DATASET_CONFIGS) as DatasetKind[]).map((dataset) => {
+            const config = DATASET_CONFIGS[dataset];
+            const columns = config.fields.map((field) => field.label);
+
+            return (
+              <div key={dataset} className="rounded-xl border border-border/70 bg-background/40 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">{config.title}</div>
+                    <div className="text-xs text-muted-foreground">{config.subtitle}</div>
+                  </div>
+                  <Badge variant="outline">샘플 포함</Badge>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {columns.map((column) => (
+                    <Badge key={`${dataset}-${column}`} variant="secondary" className="text-[11px]">
+                      {column}
+                    </Badge>
+                  ))}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 w-full"
+                  onClick={() => downloadTemplate(dataset)}
+                >
+                  <CloudDownload className="mr-2 size-4" />
+                  템플릿 다운로드
+                </Button>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="production" className="space-y-4">
       <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="production">생산량집계표</TabsTrigger>
         <TabsTrigger value="gas">호기별 가스검침량</TabsTrigger>
@@ -563,6 +624,7 @@ export function UploadPanel({ onCommitted }: UploadPanelProps) {
           onImported={onCommitted}
         />
       </TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
   );
 }

@@ -3,10 +3,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/login-form";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { hasAnyAdminProfiles } from "@/lib/admin";
 import { getCurrentUser, hasSupabaseAuthConfig } from "@/lib/supabase-auth";
+import { TriangleAlert } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "로그인 · 단조 생산성 · 가스원단위 관리",
@@ -16,6 +19,7 @@ export const metadata: Metadata = {
 export default async function LoginPage() {
   const authEnabled = hasSupabaseAuthConfig();
   const user = await getCurrentUser();
+  const adminBootstrapStatus = await hasAnyAdminProfiles();
 
   if (authEnabled && user) {
     redirect("/");
@@ -82,6 +86,20 @@ export default async function LoginPage() {
                 <p>3. 로그인하면 업로드와 조회가 같은 계정 세션으로 보호됩니다.</p>
               </CardContent>
             </Card>
+            {authEnabled && adminBootstrapStatus === false ? (
+              <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+                <TriangleAlert className="size-4" />
+                <AlertTitle>첫 admin 계정이 아직 없습니다</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <p>Supabase SQL Editor에서 아래 쿼리를 한 번 실행해 첫 관리자를 지정하세요.</p>
+                  <pre className="overflow-x-auto rounded-lg border border-border/70 bg-background/60 p-3 text-xs text-foreground">
+{`update public.profiles
+set role = 'admin'
+where email = 'admin@company.com';`}
+                  </pre>
+                </AlertDescription>
+              </Alert>
+            ) : null}
           </section>
 
           <section className="flex items-center">

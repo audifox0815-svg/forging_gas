@@ -1,5 +1,6 @@
 import { Workbench } from "@/components/workbench";
 import { AuthChip } from "@/components/auth-chip";
+import { getManagedProfiles, hasAnyAdminProfiles } from "@/lib/admin";
 import { getDashboardSnapshot } from "@/lib/dashboard";
 import { getCurrentAuthContext, hasSupabaseAuthConfig } from "@/lib/supabase-auth";
 import { redirect } from "next/navigation";
@@ -14,7 +15,11 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  const snapshot = await getDashboardSnapshot();
+  const [snapshot, adminBootstrapStatus, adminProfiles] = await Promise.all([
+    getDashboardSnapshot(),
+    hasAnyAdminProfiles(),
+    currentUser?.role === "admin" ? getManagedProfiles(currentUser) : Promise.resolve([]),
+  ]);
 
   return (
     <>
@@ -29,6 +34,9 @@ export default async function HomePage() {
         initialSnapshot={snapshot}
         authEnabled={authEnabled}
         role={currentUser?.role ?? null}
+        adminProfiles={adminProfiles}
+        adminBootstrapStatus={adminBootstrapStatus}
+        currentUserId={currentUser?.id ?? null}
       />
     </>
   );

@@ -3,20 +3,26 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardView, GasView, ProductivityView } from "@/components/dashboard-view";
+import { AdminPanel } from "@/components/admin-panel";
 import { UploadPanel } from "@/components/upload-panel";
 import { APP_NAME, type DashboardSnapshot } from "@/lib/domain";
 import { formatMonthLabel, formatNumber } from "@/lib/format";
-import { canImportRole, type AppRole } from "@/lib/access";
-import { ArrowUpRight, Factory, Gauge } from "lucide-react";
+import { canImportRole, canManageRoles, type AppRole } from "@/lib/access";
+import { ArrowUpRight, Factory, Gauge, TriangleAlert } from "lucide-react";
+import type { ManagedProfile } from "@/lib/admin";
 
 interface WorkbenchProps {
   initialSnapshot: DashboardSnapshot;
   authEnabled: boolean;
   role: AppRole | null;
+  adminProfiles: ManagedProfile[];
+  adminBootstrapStatus: boolean | null;
+  currentUserId: string | null;
 }
 
 function SummaryPill({
@@ -54,9 +60,17 @@ function roleLabel(role: AppRole | null): string {
   }
 }
 
-export function Workbench({ initialSnapshot, authEnabled, role }: WorkbenchProps) {
+export function Workbench({
+  initialSnapshot,
+  authEnabled,
+  role,
+  adminProfiles,
+  adminBootstrapStatus,
+  currentUserId,
+}: WorkbenchProps) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const canImport = !authEnabled || canImportRole(role);
+  const canManage = canManageRoles(role);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_30%),radial-gradient(circle_at_top_right,rgba(20,184,166,0.12),transparent_26%),linear-gradient(180deg,rgba(9,9,11,1)_0%,rgba(15,15,18,1)_55%,rgba(10,10,12,1)_100%)] text-foreground">
@@ -106,6 +120,17 @@ export function Workbench({ initialSnapshot, authEnabled, role }: WorkbenchProps
 
           <Separator className="bg-border/80" />
 
+          {authEnabled && adminBootstrapStatus === false ? (
+            <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+              <TriangleAlert className="size-4" />
+              <AlertTitle>첫 admin 계정이 아직 없습니다</AlertTitle>
+              <AlertDescription>
+                Supabase SQL Editor에서 첫 관리자 계정을 한 번 지정한 뒤, 이 화면의 관리자 탭에서 역할을
+                관리하세요.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
               모든 계산은 분자 / 분모를 함께 보여 줍니다.
@@ -132,13 +157,20 @@ export function Workbench({ initialSnapshot, authEnabled, role }: WorkbenchProps
           <TabsList
             className={[
               "grid h-auto w-full gap-2 bg-transparent p-0",
-              canImport ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3",
+              canImport && canManage
+                ? "grid-cols-2 md:grid-cols-5"
+                : canImport
+                  ? "grid-cols-2 md:grid-cols-4"
+                  : canManage
+                    ? "grid-cols-2 md:grid-cols-4"
+                    : "grid-cols-3",
             ].join(" ")}
           >
             {canImport ? <TabsTrigger value="upload">업로드</TabsTrigger> : null}
             <TabsTrigger value="dashboard">생산성 대시보드</TabsTrigger>
             <TabsTrigger value="productivity">시간당 생산량</TabsTrigger>
             <TabsTrigger value="gas">가스원단위</TabsTrigger>
+            {canManage ? <TabsTrigger value="admin">역할 관리</TabsTrigger> : null}
           </TabsList>
 
           {canImport ? (
@@ -158,6 +190,15 @@ export function Workbench({ initialSnapshot, authEnabled, role }: WorkbenchProps
           <TabsContent value="gas">
             <GasView snapshot={snapshot} />
           </TabsContent>
+
+          {canManage ? (
+            <TabsContent value="admin" className="space-y-4">
+              <AdminPanel
+                initialProfiles={adminProfiles}
+                currentUserId={currentUserId ?? ""}
+              />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </div>
     </main>

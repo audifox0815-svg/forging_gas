@@ -84,6 +84,23 @@ create trigger on_auth_user_updated
   after update of email, raw_user_meta_data on auth.users
   for each row execute procedure public.sync_user_profile();
 
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists on_profiles_updated on public.profiles;
+create trigger on_profiles_updated
+  before update on public.profiles
+  for each row execute procedure public.touch_updated_at();
+
 create or replace function public.current_user_role()
 returns public.app_role
 language sql

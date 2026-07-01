@@ -69,16 +69,11 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isLoginPath = pathname.startsWith("/login");
-  const needsAuth = !isLoginPath;
 
-  let response: NextResponse;
+  let response: NextResponse = NextResponse.next();
 
-  if (!user && needsAuth) {
-    response = NextResponse.redirect(new URL("/login", request.url));
-  } else if (user && isLoginPath) {
+  if (user && isLoginPath) {
     response = NextResponse.redirect(new URL("/", request.url));
-  } else {
-    response = NextResponse.next();
   }
 
   return applySessionChanges(response, cookiesToSet, headers);

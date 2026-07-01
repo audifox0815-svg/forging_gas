@@ -298,8 +298,8 @@ export const DATASET_CONFIGS: Record<DatasetKind, DatasetConfig> = {
         label: "라인",
         unit: "P5 / P8 / P15 / RM",
         example: "P15",
-        description: "가열로가 연결된 생산 라인",
-        required: true,
+        description: "가열로 번호로 자동 추정 가능",
+        required: false,
       },
       {
         key: "usage_m3",

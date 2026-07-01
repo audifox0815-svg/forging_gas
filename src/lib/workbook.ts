@@ -13,6 +13,7 @@ import {
   type LineCode,
   type ProductionRecord,
 } from "@/lib/domain";
+import { findBestTableLayout, type SpreadsheetTableLayout } from "@/lib/spreadsheet-layout";
 
 export interface WorkbookColumnOption {
   header: string;
@@ -26,6 +27,8 @@ export interface WorkbookPreview {
   sheetNames: string[];
   selectedSheet: string;
   headerRowIndex: number;
+  headerDepth: number;
+  dataStartRowIndex: number;
   headers: string[];
   availableColumns: WorkbookColumnOption[];
   suggestedMapping: Record<string, string>;
@@ -47,6 +50,8 @@ interface ParseResult<T> {
   warnings: ImportIssue[];
 }
 
+type ResolvedColumnMap = Partial<Record<string, ResolvedColumn>>;
+
 function isBlank(value: unknown): boolean {
   return value === null || value === undefined || String(value).trim() === "";
 }
@@ -61,13 +66,6 @@ function stringifyCell(value: unknown): string {
   }
 
   return String(value).trim();
-}
-
-function normalizeHeaderToken(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[\s_\-./()[\]{}]+/g, "")
-    .replace(/[^a-z0-9가-힣]/g, "");
 }
 
 function isLikelyYearMonth(value: string): boolean {
@@ -166,151 +164,6 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function findHeaderRow(matrix: unknown[][]): number {
-  let bestIndex = 0;
-  let bestScore = -1;
-
-  matrix.slice(0, 10).forEach((row, index) => {
-    const score = row.reduce<number>((sum, cell) => (isBlank(cell) ? sum : sum + 1), 0);
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = index;
-    }
-  });
-
-  return bestIndex;
-}
-
-function getHeaderWarnings(header: string): string | undefined {
-  const normalized = normalizeHeaderToken(header);
-
-  if ((normalized.includes("ton") || normalized.includes("생산량")) && normalized.includes("kg")) {
-    return "단위가 kg로 보입니다. 톤 기준인지 확인하세요.";
-  }
-
-  if (normalized.includes("시간") && (normalized.includes("min") || normalized.includes("분"))) {
-    return "단위가 분/분(min)로 보입니다. 시간 기준인지 확인하세요.";
-  }
-
-  if ((normalized.includes("usage") || normalized.includes("가스")) && normalized.includes("l")) {
-    return "단위가 L로 보입니다. m³ 기준인지 확인하세요.";
-  }
-
-  return undefined;
-}
-
-function buildSheetMatrix(workbook: XLSX.WorkBook, sheetName: string): unknown[][] {
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
-    return [];
-  }
-
-  return XLSX.utils.sheet_to_json(sheet, {
-    blankrows: false,
-    defval: "",
-    header: 1,
-  }) as unknown[][];
-}
-
-function pickBestSheet(workbook: XLSX.WorkBook): { sheetName: string; matrix: unknown[][]; headerRowIndex: number } {
-  const sheetNames = workbook.SheetNames;
-  const scored = sheetNames.map((sheetName) => {
-    const matrix = buildSheetMatrix(workbook, sheetName);
-    const headerRowIndex = findHeaderRow(matrix);
-    const score =
-      matrix[headerRowIndex]?.reduce<number>(
-        (sum, cell) => (isBlank(cell) ? sum : sum + 1),
-        0
-      ) ?? 0;
-
-    return { sheetName, matrix, headerRowIndex, score };
-  });
-
-  scored.sort((left, right) => right.score - left.score);
-  const best = scored[0] ?? { sheetName: sheetNames[0] ?? "", matrix: [], headerRowIndex: 0, score: 0 };
-
-  return { sheetName: best.sheetName, matrix: best.matrix, headerRowIndex: best.headerRowIndex };
-}
-
-function resolveRequestedSheet(
-  workbook: XLSX.WorkBook,
-  requestedSheet?: string
-): { sheetName: string; matrix: unknown[][]; headerRowIndex: number } {
-  if (requestedSheet && workbook.SheetNames.includes(requestedSheet)) {
-    const matrix = buildSheetMatrix(workbook, requestedSheet);
-    return {
-      sheetName: requestedSheet,
-      matrix,
-      headerRowIndex: findHeaderRow(matrix),
-    };
-  }
-
-  return pickBestSheet(workbook);
-}
-
-function buildSampleRows(headers: string[], rows: unknown[][], startRowIndex: number): Array<Record<string, string>> {
-  return rows.slice(startRowIndex, startRowIndex + 5).map((row) => {
-    const preview: Record<string, string> = {};
-
-    headers.forEach((header, columnIndex) => {
-      preview[header || `열${columnIndex + 1}`] = stringifyCell(row[columnIndex]);
-    });
-
-    return preview;
-  });
-}
-
-function buildColumnOptions(headers: string[], rows: unknown[][], headerRowIndex: number): WorkbookColumnOption[] {
-  const dataRow = rows[headerRowIndex + 1] ?? [];
-
-  return headers.map((header, index) => ({
-    header: header || `열${index + 1}`,
-    letter: XLSX.utils.encode_col(index),
-    index,
-    sample: stringifyCell(dataRow[index]),
-    unitWarning: getHeaderWarnings(header || ""),
-  }));
-}
-
-function buildSuggestedMapping(headers: string[], dataset: DatasetKind): Record<string, string> {
-  const config = DATASET_CONFIGS[dataset];
-  const normalizedHeaders = headers.map((header) => ({
-    header,
-    normalized: normalizeHeaderToken(header || ""),
-  }));
-
-  const aliasMap: Record<string, string[]> = {
-    ym: ["ym", "년월", "월", "집계월", "기준월", "month", "yyyymm"],
-    line: ["line", "라인", "프레스라인", "pressline"],
-    product: ["product", "제품", "품명", "제품명"],
-    material: ["material", "재질", "소재", "강종"],
-    weight_ton: ["weight_ton", "생산량", "중량", "톤", "생산중량"],
-    work_hours: ["work_hours", "가동시간", "시간", "공수"],
-    plan_ton: ["plan_ton", "목표", "계획", "plan"],
-    furnace_no: ["furnace_no", "호기", "가열로", "furnace"],
-    usage_m3: ["usage_m3", "사용량", "검침량", "가스"],
-    basis: ["basis", "기준", "고지", "자체"],
-  };
-
-  const mapping: Record<string, string> = {};
-
-  for (const field of config.fields) {
-    const aliases = aliasMap[field.key] ?? [field.key];
-    const matched = normalizedHeaders.find(({ normalized }) =>
-      aliases.some((alias) => {
-        const aliasToken = normalizeHeaderToken(alias);
-        return normalized === aliasToken || normalized.includes(aliasToken) || aliasToken.includes(normalized);
-      })
-    );
-
-    if (matched?.header) {
-      mapping[field.key] = matched.header;
-    }
-  }
-
-  return mapping;
-}
-
 function resolveMapping(
   dataset: DatasetKind,
   headers: string[],
@@ -386,18 +239,18 @@ function issue(
 function parseProductionRow(
   row: unknown[],
   rowNumber: number,
-  columns: Record<string, ResolvedColumn>
+  columns: ResolvedColumnMap
 ): ParseResult<ProductionRecord> {
   const warnings: ImportIssue[] = [];
   const issues: ImportIssue[] = [];
 
-  const ymCell = columns.ym;
-  const lineCell = columns.line;
-  const productCell = columns.product;
-  const materialCell = columns.material;
-  const weightCell = columns.weight_ton;
-  const workHoursCell = columns.work_hours;
-  const planCell = columns.plan_ton;
+  const ymCell = columns.ym!;
+  const lineCell = columns.line!;
+  const productCell = columns.product!;
+  const materialCell = columns.material!;
+  const weightCell = columns.weight_ton!;
+  const workHoursCell = columns.work_hours!;
+  const planCell = columns.plan_ton!;
 
   const ym = toYearMonth(row[ymCell.index]);
   const line = toLine(row[lineCell.index]);
@@ -482,20 +335,20 @@ function parseProductionRow(
 function parseGasRow(
   row: unknown[],
   rowNumber: number,
-  columns: Record<string, ResolvedColumn>
+  columns: ResolvedColumnMap
 ): ParseResult<GasReadingRecord> {
   const warnings: ImportIssue[] = [];
   const issues: ImportIssue[] = [];
 
-  const ymCell = columns.ym;
-  const furnaceCell = columns.furnace_no;
+  const ymCell = columns.ym!;
+  const furnaceCell = columns.furnace_no!;
   const lineCell = columns.line;
-  const usageCell = columns.usage_m3;
-  const basisCell = columns.basis;
+  const usageCell = columns.usage_m3!;
+  const basisCell = columns.basis!;
 
   const ym = toYearMonth(row[ymCell.index]);
   const furnaceNo = toNumber(row[furnaceCell.index]);
-  const lineInput = toLine(row[lineCell.index]);
+  const lineInput = lineCell ? toLine(row[lineCell.index]) : null;
   const usageM3 = toNumber(row[usageCell.index]);
   const basis = toBasis(row[basisCell.index]);
   const derivedLine = furnaceNo ? FURNACE_TO_LINE[Math.trunc(furnaceNo)] : null;
@@ -519,10 +372,18 @@ function parseGasRow(
   const finalLine = lineInput ?? derivedLine;
 
   if (!finalLine) {
-    issues.push(issue("error", "라인을 판별할 수 없습니다.", rowNumber, `${lineCell.letter}${rowNumber}`, "line"));
+    issues.push(
+      issue(
+        "error",
+        "라인을 판별할 수 없습니다.",
+        rowNumber,
+        `${(lineCell ?? furnaceCell).letter}${rowNumber}`,
+        "line"
+      )
+    );
   }
 
-  if (lineInput && derivedLine && lineInput !== derivedLine) {
+  if (lineCell && lineInput && derivedLine && lineInput !== derivedLine) {
     warnings.push(
       issue(
         "warning",
@@ -556,37 +417,58 @@ function parseGasRow(
   };
 }
 
+function buildImportWarnings(
+  layout: SpreadsheetTableLayout,
+  workbook: XLSX.WorkBook,
+  requestedSheet?: string
+): ImportIssue[] {
+  const warnings: ImportIssue[] = [];
+
+  if (requestedSheet && !workbook.SheetNames.includes(requestedSheet)) {
+    warnings.push(issue("warning", "선택한 시트를 찾지 못해 가장 적절한 시트를 사용했습니다."));
+  }
+
+  if (layout.headerDepth > 1) {
+    warnings.push(issue("warning", `헤더가 ${layout.headerDepth}줄이라 합쳐서 읽었습니다.`));
+  }
+
+  if (layout.availableColumns.length === 0) {
+    warnings.push(issue("warning", "표처럼 보이는 열을 찾지 못했습니다. 시트 구성을 다시 확인하세요."));
+  }
+
+  if (layout.matchedFields === 0) {
+    warnings.push(issue("warning", "자동 인식을 확실하게 하지 못했습니다. 시트를 다시 확인해 주세요."));
+  } else if (layout.matchedFields / Math.max(layout.totalFields, 1) < 0.6) {
+    warnings.push(issue("warning", "자동 인식 정확도가 낮습니다. 시트 구조를 다시 확인해 주세요."));
+  }
+
+  return warnings;
+}
+
+function buildPreviewFromLayout(layout: SpreadsheetTableLayout, sheetNames: string[], warnings: ImportIssue[]): WorkbookPreview {
+  return {
+    sheetNames,
+    selectedSheet: layout.sheetName,
+    headerRowIndex: layout.headerRowIndex,
+    headerDepth: layout.headerDepth,
+    dataStartRowIndex: layout.dataStartRowIndex,
+    headers: layout.headers,
+    availableColumns: layout.availableColumns,
+    suggestedMapping: layout.suggestedMapping,
+    sampleRows: layout.sampleRows,
+    warnings,
+  };
+}
+
 export function analyzeWorkbook(buffer: ArrayBuffer, dataset: DatasetKind, requestedSheet?: string): WorkbookPreview {
   const workbook = XLSX.read(buffer, {
     cellDates: true,
     type: "array",
   });
 
-  const { sheetName, matrix, headerRowIndex } = resolveRequestedSheet(workbook, requestedSheet);
-  const headers = (matrix[headerRowIndex] ?? []).map((cell) => stringifyCell(cell));
-  const availableColumns = buildColumnOptions(headers, matrix, headerRowIndex);
-  const suggestedMapping = buildSuggestedMapping(headers, dataset);
-  const sampleRows = buildSampleRows(headers, matrix, headerRowIndex + 1);
+  const layout = findBestTableLayout(workbook, dataset, requestedSheet);
 
-  const warnings: ImportIssue[] = [];
-  if (!workbook.SheetNames.includes(sheetName)) {
-    warnings.push(issue("warning", "선택한 시트를 찾지 못해 가장 적절한 시트를 사용했습니다."));
-  }
-
-  if (availableColumns.length === 0) {
-    warnings.push(issue("warning", "표처럼 보이는 열을 찾지 못했습니다. 시트 구성을 다시 확인하세요."));
-  }
-
-  return {
-    sheetNames: workbook.SheetNames,
-    selectedSheet: sheetName,
-    headerRowIndex,
-    headers,
-    availableColumns,
-    suggestedMapping,
-    sampleRows,
-    warnings,
-  };
+  return buildPreviewFromLayout(layout, workbook.SheetNames, buildImportWarnings(layout, workbook, requestedSheet));
 }
 
 export function parseWorkbookRows(
@@ -604,11 +486,14 @@ export function parseWorkbookRows(
     type: "array",
   });
 
-  const preview = analyzeWorkbook(buffer, dataset, requestedSheet);
-  const matrix = buildSheetMatrix(workbook, preview.selectedSheet);
-  const headers = preview.headers;
-  const { columns, issues } = resolveMapping(dataset, headers, mapping);
-  const columnMap = Object.fromEntries(columns.map((column) => [column.key, column])) as Record<string, ResolvedColumn>;
+  const layout = findBestTableLayout(workbook, dataset, requestedSheet);
+  const preview = buildPreviewFromLayout(
+    layout,
+    workbook.SheetNames,
+    buildImportWarnings(layout, workbook, requestedSheet)
+  );
+  const { columns, issues } = resolveMapping(dataset, layout.headers, mapping);
+  const columnMap = Object.fromEntries(columns.map((column) => [column.key, column])) as ResolvedColumnMap;
   const warnings: ImportIssue[] = [...preview.warnings, ...issues];
   const rows: Array<ProductionRecord | GasReadingRecord> = [];
 
@@ -616,9 +501,9 @@ export function parseWorkbookRows(
     return { rows: [], warnings, preview };
   }
 
-  const startRow = preview.headerRowIndex + 2;
+  const startRow = layout.dataStartRowIndex + 1;
 
-  matrix.slice(preview.headerRowIndex + 1).forEach((row, index) => {
+  layout.matrix.slice(layout.dataStartRowIndex).forEach((row, index) => {
     if (!row || row.every((cell) => isBlank(cell))) {
       return;
     }

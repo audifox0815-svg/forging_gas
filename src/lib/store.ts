@@ -160,51 +160,7 @@ async function writeLocalStore(state: StoreState): Promise<void> {
   await writeFile(LOCAL_STORE_PATH, JSON.stringify(state, null, 2), "utf8");
 }
 
-async function readFromSupabase(): Promise<StorePayload | null> {
-  if (hasSupabaseAuthConfig()) {
-    const authClient = await createSupabaseServerClient();
-
-    if (!authClient) {
-      return null;
-    }
-
-    const [productionResult, gasResult] = await Promise.all([
-      authClient
-        .from("production")
-        .select("ym,line,product,material,weight_ton,work_hours,plan_ton")
-        .order("ym", { ascending: true })
-        .order("line", { ascending: true }),
-      authClient
-        .from("gas_reading")
-        .select("ym,furnace_no,line,usage_m3,basis")
-        .order("ym", { ascending: true })
-        .order("furnace_no", { ascending: true }),
-    ]);
-
-    if (productionResult.error) {
-      throw productionResult.error;
-    }
-
-    if (gasResult.error) {
-      throw gasResult.error;
-    }
-
-    const lastImport = await readLatestImportSummary(authClient as unknown as SupabaseLikeClient);
-
-    return {
-      production: (productionResult.data ?? []) as ProductionRecord[],
-      gas: (gasResult.data ?? []) as GasReadingRecord[],
-      source: "supabase",
-      lastImport,
-    };
-  }
-
-  const client = getSupabaseAdminClient();
-
-  if (!client || !hasSupabaseConfig()) {
-    return null;
-  }
-
+async function readStoreFromClient(client: SupabaseLikeClient): Promise<StorePayload> {
   const [productionResult, gasResult] = await Promise.all([
     client
       .from("production")
@@ -226,14 +182,36 @@ async function readFromSupabase(): Promise<StorePayload | null> {
     throw gasResult.error;
   }
 
-  const lastImport = await readLatestImportSummary(client as unknown as SupabaseLikeClient);
+  const lastImport = await readLatestImportSummary(client);
 
   return {
-    production: (productionResult.data ?? []) as ProductionRecord[],
-    gas: (gasResult.data ?? []) as GasReadingRecord[],
+    production: (productionResult.data ?? []) as unknown as ProductionRecord[],
+    gas: (gasResult.data ?? []) as unknown as GasReadingRecord[],
     source: "supabase",
     lastImport,
   };
+}
+
+async function readFromSupabase(): Promise<StorePayload | null> {
+  if (hasSupabaseAuthConfig()) {
+    const authClient = await createSupabaseServerClient();
+
+    if (authClient?.auth) {
+      const authResult = await authClient.auth.getUser();
+
+      if (authResult.data.user) {
+        return readStoreFromClient(authClient as unknown as SupabaseLikeClient);
+      }
+    }
+  }
+
+  const adminClient = getSupabaseAdminClient();
+
+  if (adminClient && hasSupabaseConfig()) {
+    return readStoreFromClient(adminClient as unknown as SupabaseLikeClient);
+  }
+
+  return null;
 }
 
 export async function loadStore(): Promise<StorePayload> {
@@ -283,45 +261,25 @@ export async function saveImportedRows(
     warnings,
   };
 
-  const client = getSupabaseAdminClient();
   const authClient = hasSupabaseAuthConfig() ? await createSupabaseServerClient() : null;
-  const hasSupabase = Boolean(client && hasSupabaseConfig()) || Boolean(authClient);
+  const authResult = authClient?.auth ? await authClient.auth.getUser() : null;
+  const authUser = authResult?.data.user ?? null;
+  const adminClient = getSupabaseAdminClient();
+  const writeClient = authUser ? authClient : adminClient;
+  const hasRemoteStore = Boolean(writeClient);
 
-  if (authClient) {
+  if (writeClient) {
     const upsertPayload = rows.map((row) => ({ ...row }));
 
     const response =
       dataset === "production"
-        ? await authClient
+        ? await writeClient
             .from("production")
             .upsert(upsertPayload, {
               onConflict: "ym,line,product,material",
             })
             .select("ym")
-        : await authClient
-            .from("gas_reading")
-            .upsert(upsertPayload, {
-              onConflict: "ym,furnace_no,line,basis",
-            })
-            .select("ym");
-
-    if (response.error) {
-      throw response.error;
-    }
-
-    inserted = response.data?.length ?? rows.length;
-  } else if (hasSupabase && client) {
-    const upsertPayload = rows.map((row) => ({ ...row }));
-
-    const response =
-      dataset === "production"
-        ? await client
-            .from("production")
-            .upsert(upsertPayload, {
-              onConflict: "ym,line,product,material",
-            })
-            .select("ym")
-        : await client
+        : await writeClient
             .from("gas_reading")
             .upsert(upsertPayload, {
               onConflict: "ym,furnace_no,line,basis",
@@ -335,7 +293,7 @@ export async function saveImportedRows(
     inserted = response.data?.length ?? rows.length;
   }
 
-  if (hasSupabase) {
+  if (hasRemoteStore) {
     if (dataset === "production") {
       memoryState.production = mergeRows(
         memoryState.production,
@@ -350,15 +308,10 @@ export async function saveImportedRows(
       );
     }
 
-    const logClient = authClient ?? client;
+    const logClient = writeClient;
 
     if (logClient) {
-      let createdBy: string | null = null;
-
-      if (authClient) {
-        const authUser = await authClient.auth.getUser();
-        createdBy = authUser.data.user?.id ?? null;
-      }
+      const createdBy: string | null = authUser?.id ?? null;
 
       const logResult = await (logClient as unknown as SupabaseLikeClient)
         .from("import_log")
@@ -402,7 +355,7 @@ export async function saveImportedRows(
 
   memoryState.lastImport = summary;
 
-  if (!hasSupabase) {
+  if (!hasRemoteStore) {
     await writeLocalStore(memoryState);
   }
 

@@ -24,18 +24,15 @@ function parseMode(value: string | null): "preview" | "commit" {
 
 export async function POST(request: Request) {
   let currentUserRole: AppRole | null = null;
+  let hasAuthSession = false;
 
   if (hasSupabaseAuthConfig()) {
     const currentUser = await getCurrentAuthContext();
 
-    if (!currentUser) {
-      return NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (currentUser) {
+      hasAuthSession = true;
+      currentUserRole = currentUser.role;
     }
-
-    currentUserRole = currentUser.role;
   }
 
   const formData = await request.formData();
@@ -46,14 +43,14 @@ export async function POST(request: Request) {
 
   if (!dataset) {
     return NextResponse.json(
-      { ok: false, message: "업로드 종류를 확인할 수 없습니다." },
+      { ok: false, message: "지원하지 않는 업로드 형식입니다." },
       { status: 400 }
     );
   }
 
   if (!(file instanceof File)) {
     return NextResponse.json(
-      { ok: false, message: "엑셀 파일을 찾지 못했습니다." },
+      { ok: false, message: "업로드할 파일을 찾지 못했습니다." },
       { status: 400 }
     );
   }
@@ -65,7 +62,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (mode === "commit" && hasSupabaseAuthConfig() && !canImportRole(currentUserRole)) {
+  if (mode === "commit" && hasAuthSession && !canImportRole(currentUserRole)) {
     return NextResponse.json(
       {
         ok: false,
@@ -126,3 +123,4 @@ export async function POST(request: Request) {
     issues: result.warnings,
   });
 }
+

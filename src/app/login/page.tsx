@@ -13,7 +13,7 @@ import { TriangleAlert } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "로그인 · 단조 생산성 · 가스원단위 관리",
-  description: "Supabase Auth로 로그인하고 업로드와 대시보드를 사용합니다.",
+  description: "관리자 역할 관리가 필요할 때만 사용하는 Supabase Auth 로그인 화면입니다.",
 };
 
 export default async function LoginPage() {
@@ -31,16 +31,17 @@ export default async function LoginPage() {
         <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="space-y-5 rounded-[2rem] border border-border/70 bg-background/35 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)] backdrop-blur">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">인증 단계</Badge>
-              <Badge variant="outline">{authEnabled ? "Supabase 연결됨" : "데모 모드"}</Badge>
+              <Badge variant="secondary">공용 사용 가능</Badge>
+              <Badge variant="outline">{authEnabled ? "관리자 로그인 사용" : "로그인 없음"}</Badge>
             </div>
+
             <div className="space-y-4">
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 단조 생산성 · 가스원단위 관리
               </h1>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                현장 운영자가 로그인하면 엑셀 업로드, 시트/컬럼 매핑, 검증 후 적재,
-                그리고 라인별 목표·실적과 가스원단위를 한 화면에서 확인할 수 있습니다.
+                기본 화면은 로그인 없이도 열 수 있습니다. 이 화면은 관리자 역할 관리가 필요할 때만
+                들어오면 되는 보조 경로입니다.
               </p>
             </div>
 
@@ -49,43 +50,36 @@ export default async function LoginPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <Card className="border-border/70 bg-card/50">
                 <CardContent className="p-4">
-                  <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                    로그인 방식
-                  </div>
-                  <div className="mt-2 text-sm font-medium">이메일 + 비밀번호</div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">접근</div>
+                  <div className="mt-2 text-sm font-medium">게스트 우선</div>
                 </CardContent>
               </Card>
               <Card className="border-border/70 bg-card/50">
                 <CardContent className="p-4">
-                  <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                    보호 범위
-                  </div>
-                  <div className="mt-2 text-sm font-medium">업로드 / 대시보드 / 적재 API</div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">권한</div>
+                  <div className="mt-2 text-sm font-medium">관리자만 역할 관리</div>
                 </CardContent>
               </Card>
               <Card className="border-border/70 bg-card/50">
                 <CardContent className="p-4">
-                  <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                    권한 기준
-                  </div>
-                  <div className="mt-2 text-sm font-medium">인증 사용자만 접근</div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">업로드</div>
+                  <div className="mt-2 text-sm font-medium">공용 사용 가능</div>
                 </CardContent>
               </Card>
             </div>
 
             <Card className="border-border/70 bg-card/50">
               <CardHeader>
-                <CardTitle>운영 메모</CardTitle>
-                <CardDescription>
-                  Supabase Auth가 아직 준비되지 않았다면 데모 모드로 로컬 화면을 계속 볼 수 있습니다.
-                </CardDescription>
+                <CardTitle>안내</CardTitle>
+                <CardDescription>로그인은 관리자 기능을 쓸 때만 사용하세요.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>1. Supabase 프로젝트에서 Auth 사용자를 하나 만듭니다.</p>
-                <p>2. `.env.local`에 공개 키와 서비스 롤 키를 설정합니다.</p>
-                <p>3. 로그인하면 업로드와 조회가 같은 계정 세션으로 보호됩니다.</p>
+                <p>1. 기본 대시보드는 로그인 없이 바로 볼 수 있습니다.</p>
+                <p>2. 역할 관리가 필요할 때만 Supabase Auth로 로그인하세요.</p>
+                <p>3. 첫 admin이 없다면 SQL Editor에서 한 번만 지정하면 됩니다.</p>
               </CardContent>
             </Card>
+
             {authEnabled && adminBootstrapStatus === false ? (
               <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
                 <TriangleAlert className="size-4" />
@@ -108,16 +102,13 @@ where email = 'admin@company.com';`}
             ) : (
               <Card className="w-full border-border/70 bg-card/85 shadow-[0_24px_70px_rgba(0,0,0,0.32)] backdrop-blur">
                 <CardHeader>
-                  <CardTitle>데모 모드</CardTitle>
+                  <CardTitle>비로그인 모드</CardTitle>
                   <CardDescription>
-                    Supabase Auth 환경변수가 아직 없어 로그인 화면은 비활성화되어 있습니다.
+                    Supabase Auth가 설정되지 않아 로그인 없이 공용 모드로 사용 중입니다.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm text-muted-foreground">
-                  <p>
-                    지금은 인증 없이도 업로드, 적재, 대시보드 확인이 가능합니다. 실DB 연결을
-                    켜면 이 화면에서 로그인으로 전환됩니다.
-                  </p>
+                  <p>지금은 업로드, 조회, 대시보드 모두 바로 사용할 수 있습니다.</p>
                   <Link
                     href="/"
                     className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/80"
@@ -133,3 +124,4 @@ where email = 'admin@company.com';`}
     </main>
   );
 }
+

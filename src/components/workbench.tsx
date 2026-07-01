@@ -56,7 +56,7 @@ function roleLabel(role: AppRole | null): string {
     case "viewer":
       return "조회 전용";
     default:
-      return "데모 모드";
+      return "게스트";
   }
 }
 
@@ -69,8 +69,12 @@ export function Workbench({
   currentUserId,
 }: WorkbenchProps) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const canImport = !authEnabled || canImportRole(role);
+  const guestMode = authEnabled && role === null;
+  const canImport = !authEnabled || canImportRole(role) || guestMode;
   const canManage = canManageRoles(role);
+  const tabCount = 3 + (canImport ? 1 : 0) + (canManage ? 1 : 0);
+  const tabGridClass =
+    tabCount >= 5 ? "grid-cols-2 md:grid-cols-5" : tabCount === 4 ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3";
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_30%),radial-gradient(circle_at_top_right,rgba(20,184,166,0.12),transparent_26%),linear-gradient(180deg,rgba(9,9,11,1)_0%,rgba(15,15,18,1)_55%,rgba(10,10,12,1)_100%)] text-foreground">
@@ -79,18 +83,16 @@ export function Workbench({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">1단계 · 업로드 / 적재 / 기본 대시보드</Badge>
+                <Badge variant="secondary">단조 생산성 · 가스원단위</Badge>
                 <Badge variant="outline">{snapshot.source}</Badge>
                 <Badge variant="outline">{snapshot.activeYear}년</Badge>
                 {authEnabled ? <Badge variant="outline">{roleLabel(role)}</Badge> : null}
               </div>
               <div className="space-y-3">
-                <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-                  {APP_NAME}
-                </h1>
+                <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">{APP_NAME}</h1>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-                  현장 엑셀 파일을 올리면 생산성과 가스원단위를 자동으로 집계합니다. 조회는 전원 가능하고,
-                  업로드와 적재는 관리자 또는 운영자만 할 수 있습니다.
+                  업로드된 엑셀을 바로 집계해 생산성과 가스원단위를 보여줍니다. 로그인 없이도 사용할 수 있고,
+                  로그인한 관리자만 역할을 관리할 수 있습니다.
                 </p>
               </div>
             </div>
@@ -98,12 +100,12 @@ export function Workbench({
             <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[420px] lg:grid-cols-1">
               <SummaryPill
                 icon={<Factory className="size-4" />}
-                label="생산 행"
+                label="생산"
                 value={`${formatNumber(snapshot.counts.productionRows, 0)}건`}
               />
               <SummaryPill
                 icon={<Gauge className="size-4" />}
-                label="가스 행"
+                label="가스"
                 value={`${formatNumber(snapshot.counts.gasRows, 0)}건`}
               />
               <SummaryPill
@@ -112,7 +114,7 @@ export function Workbench({
                 value={
                   snapshot.importHealth.lastImport
                     ? formatMonthLabel(snapshot.importHealth.lastImport.importedAt.slice(0, 7))
-                    : "적재 데이터 없음"
+                    : "아직 없음"
                 }
               />
             </div>
@@ -120,52 +122,51 @@ export function Workbench({
 
           <Separator className="bg-border/80" />
 
+          {guestMode ? (
+            <Alert className="border-sky-500/30 bg-sky-500/10 text-sky-100">
+              <TriangleAlert className="size-4" />
+              <AlertTitle>게스트 모드</AlertTitle>
+              <AlertDescription>
+                로그인 없이도 바로 사용할 수 있습니다. 업로드와 조회는 공용으로 열어두고, 역할 관리는
+                로그인한 관리자만 사용할 수 있습니다.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {authEnabled && adminBootstrapStatus === false ? (
             <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
               <TriangleAlert className="size-4" />
               <AlertTitle>첫 admin 계정이 아직 없습니다</AlertTitle>
               <AlertDescription>
-                Supabase SQL Editor에서 첫 관리자 계정을 한 번 지정한 뒤, 이 화면의 관리자 탭에서 역할을
-                관리하세요.
+                Supabase SQL Editor에서 첫 관리자 계정을 한 번 지정한 뒤, 역할 관리 탭에서 운영하세요.
               </AlertDescription>
             </Alert>
           ) : null}
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              모든 계산은 분자 / 분모를 함께 보여 줍니다.
+              모든 계산식에는 분자와 분모를 함께 보여줍니다.
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              업로드 실패 시 어떤 셀에서 막혔는지 바로 확인할 수 있습니다.
+              업로드 실패 시 어느 셀에서 문제가 났는지 바로 확인할 수 있습니다.
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              단위가 맞지 않으면 경고 배지를 띄워서 먼저 확인하게 합니다.
+              단위가 맞지 않으면 경고 배지를 띄워서 실수를 줄입니다.
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/50 p-4 text-sm text-muted-foreground">
-              Supabase가 없으면 데모 저장소로 바로 이어서 확인할 수 있습니다.
+              Supabase가 없어도 로컬로 동작하고, 있으면 서버 저장으로 이어집니다.
             </div>
           </div>
 
           {!canImport ? (
             <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-              현재 계정은 조회 전용입니다. 업로드와 적재는 관리자 또는 운영자 계정에서만 사용할 수 있습니다.
+              현재 계정은 조회 전용입니다. 업로드가 필요하면 운영자 또는 관리자에게 권한을 요청하세요.
             </div>
           ) : null}
         </header>
 
         <Tabs defaultValue="dashboard" className="space-y-4">
-          <TabsList
-            className={[
-              "grid h-auto w-full gap-2 bg-transparent p-0",
-              canImport && canManage
-                ? "grid-cols-2 md:grid-cols-5"
-                : canImport
-                  ? "grid-cols-2 md:grid-cols-4"
-                  : canManage
-                    ? "grid-cols-2 md:grid-cols-4"
-                    : "grid-cols-3",
-            ].join(" ")}
-          >
+          <TabsList className={["grid h-auto w-full gap-2 bg-transparent p-0", tabGridClass].join(" ")}>
             {canImport ? <TabsTrigger value="upload">업로드</TabsTrigger> : null}
             <TabsTrigger value="dashboard">생산성 대시보드</TabsTrigger>
             <TabsTrigger value="productivity">시간당 생산량</TabsTrigger>
@@ -193,10 +194,7 @@ export function Workbench({
 
           {canManage ? (
             <TabsContent value="admin" className="space-y-4">
-              <AdminPanel
-                initialProfiles={adminProfiles}
-                currentUserId={currentUserId ?? ""}
-              />
+              <AdminPanel initialProfiles={adminProfiles} currentUserId={currentUserId ?? ""} />
             </TabsContent>
           ) : null}
         </Tabs>
@@ -204,3 +202,4 @@ export function Workbench({
     </main>
   );
 }
+

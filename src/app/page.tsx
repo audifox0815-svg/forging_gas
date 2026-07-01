@@ -3,17 +3,12 @@ import { AuthChip } from "@/components/auth-chip";
 import { getManagedProfiles, hasAnyAdminProfiles } from "@/lib/admin";
 import { getDashboardSnapshot } from "@/lib/dashboard";
 import { getCurrentAuthContext, hasSupabaseAuthConfig } from "@/lib/supabase-auth";
-import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const authEnabled = hasSupabaseAuthConfig();
   const currentUser = await getCurrentAuthContext();
-
-  if (authEnabled && !currentUser) {
-    redirect("/login");
-  }
 
   const [snapshot, adminBootstrapStatus, adminProfiles] = await Promise.all([
     getDashboardSnapshot(),

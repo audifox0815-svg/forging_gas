@@ -100,6 +100,9 @@ function DatasetForm({
 }) {
   const config = DATASET_CONFIGS[dataset];
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const previewRequestIdRef = React.useRef(0);
+  const previewActionRef = React.useRef<(sheetName?: string) => Promise<void>>(async () => {});
+  const lastAutoPreviewFileKeyRef = React.useRef<string | null>(null);
   const [dragging, setDragging] = React.useState(false);
 
   const updateState = (patch: Partial<DatasetUploadState>) => {
@@ -107,6 +110,9 @@ function DatasetForm({
   };
 
   const setFile = (file: File | null) => {
+    previewRequestIdRef.current += 1;
+    lastAutoPreviewFileKeyRef.current = null;
+
     if (!file) {
       updateState({
         file: null,
@@ -129,7 +135,7 @@ function DatasetForm({
     });
   };
 
-  const handlePreview = async () => {
+  const handlePreview = async (sheetName?: string) => {
     if (!state.file) {
       updateState({
         message: "먼저 엑셀 파일을 선택해주세요.",
@@ -137,12 +143,14 @@ function DatasetForm({
       return;
     }
 
+    const requestId = ++previewRequestIdRef.current;
+    const nextSheetName = sheetName ?? state.selectedSheet;
     const formData = new FormData();
     formData.set("file", state.file);
     formData.set("dataset", dataset);
     formData.set("mode", "preview");
-    if (state.selectedSheet) {
-      formData.set("sheetName", state.selectedSheet);
+    if (nextSheetName) {
+      formData.set("sheetName", nextSheetName);
     }
 
     updateState({ loadingPreview: true, message: null, issues: [] });
@@ -153,6 +161,10 @@ function DatasetForm({
         body: formData,
       });
       const payload = await response.json();
+
+      if (requestId !== previewRequestIdRef.current) {
+        return;
+      }
 
       if (!response.ok || !payload.ok) {
         updateState({
@@ -173,12 +185,39 @@ function DatasetForm({
         message: "미리보기를 불러왔습니다. 필요한 경우 컬럼 매핑을 조정한 뒤 적재하세요.",
       });
     } catch {
+      if (requestId !== previewRequestIdRef.current) {
+        return;
+      }
       updateState({
         loadingPreview: false,
         message: "미리보기 요청 중 오류가 발생했습니다.",
       });
     }
   };
+
+  React.useEffect(() => {
+    previewActionRef.current = handlePreview;
+  });
+
+  React.useEffect(() => {
+    if (!state.file) {
+      return;
+    }
+
+    const fileKey = [state.file.name, state.file.size, state.file.lastModified].join("|");
+
+    if (lastAutoPreviewFileKeyRef.current === fileKey) {
+      return;
+    }
+
+    lastAutoPreviewFileKeyRef.current = fileKey;
+
+    const timeoutId = window.setTimeout(() => {
+      void previewActionRef.current();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [state.file]);
 
   const handleCommit = async () => {
     if (!state.file) {
@@ -297,7 +336,9 @@ function DatasetForm({
               <Button
                 type="button"
                 size="sm"
-                onClick={handlePreview}
+                onClick={() => {
+                  void previewActionRef.current();
+                }}
                 disabled={!state.file || state.loadingPreview}
               >
                 {state.loadingPreview ? "미리보기 중..." : "1. 미리보기"}
@@ -457,12 +498,14 @@ function DatasetForm({
               <div className="text-sm font-medium">시트 선택</div>
               <Select
                 value={state.selectedSheet || state.preview.selectedSheet}
-                onValueChange={(next) =>
+                onValueChange={(next) => {
+                  const nextSheet = next ?? "";
                   onChange({
                     ...state,
-                    selectedSheet: next ?? "",
-                  })
-                }
+                    selectedSheet: nextSheet,
+                  });
+                  void previewActionRef.current(nextSheet);
+                }}
                 disabled={!state.preview}
               >
                 <SelectTrigger className="w-full sm:w-72">

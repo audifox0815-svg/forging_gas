@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 
-import { DATASET_CONFIGS, type DatasetKind } from "@/lib/domain";
+import { DATASET_CONFIGS, LINE_CODES, PRODUCT_BENCHMARKS, type DatasetKind } from "@/lib/domain";
 
 export interface SpreadsheetColumnOption {
   header: string;
@@ -139,6 +139,189 @@ function collectNonEmptyRows(rows: unknown[][], startIndex: number, limit: numbe
   return result;
 }
 
+function buildColumnSamples(rows: unknown[][], dataStartRowIndex: number, columnCount: number, limit = 5): string[][] {
+  const samples = Array.from({ length: columnCount }, () => [] as string[]);
+  const dataRows = collectNonEmptyRows(rows, dataStartRowIndex, limit);
+
+  for (const row of dataRows) {
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+      const cell = stringifyCell(row[columnIndex]);
+      if (cell) {
+        samples[columnIndex].push(cell);
+      }
+    }
+  }
+
+  return samples;
+}
+
+function parseNumericValue(value: string): number | null {
+  const parsed = Number(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isYearMonthValue(value: string): boolean {
+  return /^(20\d{2})[-./]?(0?[1-9]|1[0-2])$/.test(value) || /^(20\d{2})(0[1-9]|1[0-2])$/.test(value);
+}
+
+function isDateLikeValue(value: string): boolean {
+  return /^(20\d{2})[-./](0?[1-9]|1[0-2])[-./](0?[1-9]|[12]\d|3[01])/.test(value);
+}
+
+function isLineValue(value: string): boolean {
+  const normalized = normalizeHeaderToken(value).toUpperCase().replace(/-/g, "");
+
+  if (normalized === "P05") {
+    return true;
+  }
+
+  return LINE_CODES.includes(normalized as (typeof LINE_CODES)[number]);
+}
+
+function isFurnaceValue(value: string): boolean {
+  const parsed = parseNumericValue(value);
+
+  return parsed !== null && Number.isInteger(parsed) && parsed >= 1 && parsed <= 20;
+}
+
+function isBasisValue(value: string): boolean {
+  const normalized = normalizeHeaderToken(value);
+
+  return normalized.includes("고지") || normalized.includes("자체") || normalized.includes("notice") || normalized.includes("self");
+}
+
+function isKnownProductValue(value: string): boolean {
+  const normalized = normalizeHeaderToken(value);
+
+  return Object.keys(PRODUCT_BENCHMARKS).some((product) => normalizeHeaderToken(product) === normalized);
+}
+
+function looksLikeMaterialValue(value: string): boolean {
+  const normalized = value.replace(/\s+/g, "").toUpperCase();
+
+  return /^(SCM|SKD|SKH|SNCM|SNB|S45C|S50C|S20C|FC|FCD|FC25|SUS|SM|SS|SC|ST|SN|SF|SCr|SUJ|SB)\d*[A-Z0-9-]*$/.test(
+    normalized
+  ) || /^[A-Z]{1,6}\d{1,4}[A-Z0-9-]*$/.test(normalized);
+}
+
+function scoreFieldValueEvidence(fieldKey: string, samples: string[]): number {
+  const relevantSamples = samples.filter((sample) => !isBlank(sample));
+
+  if (relevantSamples.length === 0) {
+    return 0;
+  }
+
+  let score = 0;
+  let matchedSamples = 0;
+
+  for (const sample of relevantSamples) {
+    const text = sample.trim();
+    const parsedNumber = parseNumericValue(text);
+
+    switch (fieldKey) {
+      case "ym":
+        if (isYearMonthValue(text) || isDateLikeValue(text)) {
+          score += 6;
+          matchedSamples += 1;
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      case "line":
+        if (isLineValue(text)) {
+          score += 6;
+          matchedSamples += 1;
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      case "furnace_no":
+        if (isFurnaceValue(text)) {
+          score += 6;
+          matchedSamples += 1;
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      case "basis":
+        if (isBasisValue(text)) {
+          score += 6;
+          matchedSamples += 1;
+        } else if (text) {
+          score -= 1;
+        }
+        break;
+      case "product":
+        if (isKnownProductValue(text)) {
+          score += 5;
+          matchedSamples += 1;
+        } else if (/^[\p{Script=Hangul}\s]+$/u.test(text)) {
+          score += 2;
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      case "material":
+        if (looksLikeMaterialValue(text)) {
+          score += 5;
+          matchedSamples += 1;
+        } else if (/^[A-Za-z0-9]+$/.test(text)) {
+          score += 1;
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      case "work_hours":
+        if (parsedNumber !== null && parsedNumber >= 0 && parsedNumber <= 744) {
+          score += 4;
+          matchedSamples += 1;
+          if (parsedNumber <= 100) {
+            score += 1;
+          }
+
+          if (!Number.isInteger(parsedNumber)) {
+            score += 1;
+          }
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      case "usage_m3":
+      case "weight_ton":
+      case "plan_ton":
+        if (parsedNumber !== null && parsedNumber >= 0) {
+          score += 3;
+          matchedSamples += 1;
+
+          if (parsedNumber > 1000) {
+            score += 1;
+          }
+
+          if (!Number.isInteger(parsedNumber)) {
+            score += 1;
+          }
+        } else if (parsedNumber !== null) {
+          score -= 1;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (matchedSamples === 0) {
+    return 0;
+  }
+
+  if (matchedSamples === relevantSamples.length) {
+    score += 4;
+  } else if (matchedSamples / relevantSamples.length >= 0.8) {
+    score += 2;
+  }
+
+  return Math.max(score, 0);
+}
+
 function buildColumnOptions(headers: string[], rows: unknown[][], dataStartRowIndex: number): SpreadsheetColumnOption[] {
   const sampleRow = collectNonEmptyRows(rows, dataStartRowIndex, 1)[0] ?? [];
 
@@ -182,13 +365,19 @@ function scoreHeaderMatch(header: string, alias: string): number {
   return 0;
 }
 
-function buildUniqueMapping(headers: string[], dataset: DatasetKind): DatasetHeaderScore {
+function buildUniqueMapping(
+  headers: string[],
+  dataset: DatasetKind,
+  rows: unknown[][] = [],
+  dataStartRowIndex = 0
+): DatasetHeaderScore {
   const config = DATASET_CONFIGS[dataset];
   const normalizedHeaders = headers.map((header, index) => ({
     header,
     index,
     normalized: normalizeHeaderToken(header),
   }));
+  const columnSamples = buildColumnSamples(rows, dataStartRowIndex, headers.length);
   const mapping: Record<string, string> = {};
   const usedIndexes = new Set<number>();
   const orderedFields = [...config.fields].sort((left, right) => Number(right.required) - Number(left.required));
@@ -198,7 +387,8 @@ function buildUniqueMapping(headers: string[], dataset: DatasetKind): DatasetHea
     const matches = normalizedHeaders
       .map(({ header, index, normalized }) => {
         const bestScore = aliases.reduce((score, alias) => Math.max(score, scoreHeaderMatch(normalized, alias)), 0);
-        return { header, index, score: bestScore };
+        const valueScore = scoreFieldValueEvidence(field.key, columnSamples[index] ?? []);
+        return { header, index, score: bestScore * 100 + valueScore };
       })
       .filter((item) => item.score > 0)
       .sort((left, right) => right.score - left.score || left.index - right.index);
@@ -244,6 +434,45 @@ function getDataDensity(headers: string[], rows: unknown[][], dataStartRowIndex:
   return densityTotal / dataRows.length;
 }
 
+function scoreHeaderShape(matrix: unknown[][], headerRowIndex: number, headerDepth: number): number {
+  let textCells = 0;
+  let dataLikeCells = 0;
+  let nonEmptyCells = 0;
+
+  for (let offset = 0; offset < headerDepth; offset += 1) {
+    const row = matrix[headerRowIndex + offset] ?? [];
+
+    for (const cell of row) {
+      const text = stringifyCell(cell);
+
+      if (!text) {
+        continue;
+      }
+
+      nonEmptyCells += 1;
+
+      if (
+        parseNumericValue(text) !== null ||
+        isYearMonthValue(text) ||
+        isDateLikeValue(text) ||
+        isLineValue(text) ||
+        isFurnaceValue(text) ||
+        isBasisValue(text)
+      ) {
+        dataLikeCells += 1;
+      } else {
+        textCells += 1;
+      }
+    }
+  }
+
+  if (nonEmptyCells === 0) {
+    return 0;
+  }
+
+  return textCells * 6 + Math.min(nonEmptyCells, 10) * 2 - dataLikeCells * 12;
+}
+
 function scoreLayoutCandidate(
   headers: string[],
   rows: unknown[][],
@@ -251,16 +480,17 @@ function scoreLayoutCandidate(
   headerRowIndex: number,
   headerDepth: number
 ): DatasetHeaderScore & { score: number } {
-  const headerScore = buildUniqueMapping(headers, dataset);
-  const nonEmptyHeaderCount = getNonEmptyHeaderCount(headers);
   const dataStartRowIndex = headerRowIndex + headerDepth;
+  const headerScore = buildUniqueMapping(headers, dataset, rows, dataStartRowIndex);
+  const nonEmptyHeaderCount = getNonEmptyHeaderCount(headers);
   const density = getDataDensity(headers, rows, dataStartRowIndex);
+  const headerShapeScore = scoreHeaderShape(rows, headerRowIndex, headerDepth);
   const depthPenalty = Math.max(0, headerDepth - 1) * 40;
   const headerPresenceScore = nonEmptyHeaderCount * 8;
 
   return {
     ...headerScore,
-    score: headerScore.score + headerPresenceScore + density * 40 - depthPenalty,
+    score: headerScore.score + headerPresenceScore + density * 40 + headerShapeScore - depthPenalty,
   };
 }
 
@@ -316,7 +546,7 @@ function findBestCandidateForSheet(
       headerDepth: 1,
       headers: [],
       dataStartRowIndex: 1,
-      mapping: fallbackScore.mapping,
+      mapping: buildUniqueMapping([], dataset).mapping,
       matchedFields: fallbackScore.matchedFields,
       matchedRequiredFields: fallbackScore.matchedRequiredFields,
       totalFields: fallbackScore.totalFields,
